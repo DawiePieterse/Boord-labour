@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "labour",
+      "cwd": "backend",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["run_preview.py"],
+      "port": 8040
+    }
+  ]
+}

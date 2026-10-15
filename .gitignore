@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Written by install.ps1 with this machine's own absolute paths (venv
+# location, Boord's boord.db path) - not portable, so not committed.
+start_labour_server.bat
+
+# The farm's own scans, edits, rates and backups - who worked which hours is
+# one farm's payroll record and never belongs in the repository.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
