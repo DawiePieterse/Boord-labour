@@ -74,15 +74,20 @@ labour link in Boord Admin) and sign in with the PIN.
 
 ## 3. At the door
 
-Point the camera at the badge. The screen turns:
+For each worker, tap **Scan Worker QR** and point the camera at the badge.
+The camera closes as soon as it reads the badge, and the screen turns:
 
 - **green IN** when the worker was not inside, or
 - **red OUT** when they were.
 
-It shows the worker's name and photo. **If the direction is wrong** (say the
-screen says IN but they are leaving), tap **"Wrong? Make it OUT"** while the
-screen is still showing. A badge scanned again within a minute is ignored,
-so holding it in front of the camera is harmless.
+It shows the worker's name and photo, then goes back to the **Scan Worker
+QR** button for the next person. **Cancel** closes the camera without
+scanning.
+
+**If the direction is wrong** (say the screen says IN but they are leaving),
+tap **"Wrong? Make it OUT"** while the screen is still showing. If the same
+badge is scanned again within a minute, the phone says so and records
+nothing, so a double tap at the door can't turn an IN into an OUT.
 
 **No connection?** Keep scanning. Scans are saved on the phone with the time
 they were scanned and are sent when the connection returns. The header says

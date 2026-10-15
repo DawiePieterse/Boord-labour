@@ -21,6 +21,7 @@ let serverPresence = [];     // [{worker_id, in_ts}] as last fetched
 let inside = new Map();      // worker_id -> in time (ms): server presence + local unsynced scans
 const lastScanAt = new Map(); // worker_id -> ms, for the duplicate window
 let scanner = null;
+let decoded = false;          // this camera session already read its badge
 let resultTimer = null;
 let currentTab = "scan";
 
@@ -96,28 +97,37 @@ function setSyncStatus(ok) {
 // --------------------------------------------------------------------------
 // Scanning
 // --------------------------------------------------------------------------
+// One badge per tap: Scan Worker QR opens the camera, the first badge read
+// closes it again and shows IN/OUT, and the screen is back at the button.
+// Cancel (or a tab change) closes it without a scan.
+function showCamera(on) {
+  $("qrReader").classList.toggle("hidden", !on);
+  $("stopBtn").classList.toggle("hidden", !on);
+  $("cameraBtn").classList.toggle("hidden", on);
+}
+
 async function startCamera() {
   // A browser only hands out the camera on https (or localhost). On the farm
   // that means the Tailscale address - same rule as Boord's Field app.
   if (!window.isSecureContext) {
-    $("cameraBtn").classList.add("hidden");
-    $("qrReader").innerHTML = `<div class="text-white p-6 text-center">Scanning needs the secure
-      https://...ts.net:8040/ address - check Tailscale is connected on this phone.</div>`;
+    Boord.toast("Scanning needs the secure https://...ts.net:8040/ address - check Tailscale is connected");
     return;
   }
   if (scanner) return;
+  decoded = false;
+  showCamera(true);
   scanner = new Html5Qrcode("qrReader");
   try {
     await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 220 }, onDecoded, () => {});
-    $("cameraBtn").classList.add("hidden");
   } catch (e) {
     scanner = null;
-    $("cameraBtn").classList.remove("hidden");
+    showCamera(false);
     Boord.toast("Camera unavailable - allow camera access, then tap Scan Worker QR");
   }
 }
 
 function stopCamera() {
+  showCamera(false);
   if (!scanner) return;
   const s = scanner;
   scanner = null;
@@ -125,13 +135,24 @@ function stopCamera() {
 }
 
 async function onDecoded(text) {
+  // The camera reports a badge many times a second while it is in view;
+  // only the first read of this session counts.
+  if (decoded) return;
+  decoded = true;
+  stopCamera();
+
   const id = text.trim();
   const now = Date.now();
-  // The camera reports the same badge many times a second while it is in view.
-  if (now - (lastScanAt.get(id) || 0) < DUPLICATE_MS) return;
+  const worker = workers.get(id);
+  // Scanned again straight after - someone tapped twice at the door. Saying
+  // so beats silently recording an OUT ten seconds after the IN (pay.py
+  // would drop it anyway, but this phone would then show them as gone).
+  if (worker && now - (lastScanAt.get(id) || 0) < DUPLICATE_MS) {
+    Boord.toast(`${worker.name} was scanned a moment ago - wait a minute to scan again`);
+    return;
+  }
   lastScanAt.set(id, now);
 
-  const worker = workers.get(id);
   if (!worker) {
     Boord._tone(220, 0.35);
     showResult({ bad: true, name: `Badge "${id}" is not an active Boord worker` });
@@ -228,8 +249,9 @@ function showTab(name) {
   document.querySelectorAll("[data-tab]").forEach((s) => s.classList.toggle("hidden", s.dataset.tab !== name));
   document.querySelectorAll("[data-nav]").forEach((b) =>
     b.classList.toggle("text-blue-800", b.dataset.nav === name));
-  // The camera only runs on the Scan tab - it is the battery's biggest cost.
-  if (name === "scan") startCamera(); else stopCamera();
+  // Leaving the Scan tab stops the camera - it is the battery's biggest cost.
+  // Coming back does not restart it; that waits for the button.
+  if (name !== "scan") stopCamera();
   if (name === "today") renderToday();
 }
 
@@ -241,6 +263,7 @@ Boord.boot(async () => {
 
   document.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.nav)));
   $("cameraBtn").addEventListener("click", startCamera);
+  $("stopBtn").addEventListener("click", stopCamera);
   $("resultClose").addEventListener("click", hideResult);
   $("deviceLabel").addEventListener("click", renamePhone);
 
