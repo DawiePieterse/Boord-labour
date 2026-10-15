@@ -8,7 +8,7 @@ const Boord = {
   // scripts/release.sh refuses a tag that disagrees with it, and
   // /api/version reads it back. Shown in the header so a stale cached copy
   // on a phone is obvious at a glance.
-  VERSION: "1.0",
+  VERSION: "1.0.1",
 
   getDeviceId() { return localStorage.getItem("boord_device_id"); },
   // Re-pointing a tablet at a different device slot has to drop the picking
