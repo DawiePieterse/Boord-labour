@@ -19,11 +19,11 @@ from sqlalchemy import text
 import config
 from backup import start_backup_scheduler
 from db import boord_engine, init_labour_db
-from routers import reports, scans, settings, version, workers
+from routers import admin, reports, scans, settings, version, workers
 
 app = FastAPI(title="Boord Labour")
 
-for module in (workers, scans, reports, settings, version):
+for module in (workers, scans, reports, settings, admin, version):
     app.include_router(module.router)
 
 

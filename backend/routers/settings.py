@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends
 from pydantic import Field
 from sqlmodel import Session, SQLModel
 
+from admin_auth import require_admin
 from db import get_labour_session, rates_by_date
 from models_labour import PayRate
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_admin)])
 
 
 class RateIn(SQLModel):

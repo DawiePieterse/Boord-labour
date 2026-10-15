@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
+from admin_auth import require_admin
 from db import get_boord_session, get_labour_session, rates_by_date
 from excel_io import xlsx_response
 from pay import MAX_SHIFT, NoRateError, day_pay, monday, pair_shifts, within
@@ -12,7 +13,7 @@ from routers.scans import scans_between, utcnow
 from routers.workers import worker_names
 from timeutil import day_bounds, local_str
 
-router = APIRouter(prefix="/api/reports", tags=["reports"])
+router = APIRouter(prefix="/api/reports", tags=["reports"], dependencies=[Depends(require_admin)])
 
 
 def _r2(x: float) -> float:

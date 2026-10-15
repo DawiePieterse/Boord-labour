@@ -25,7 +25,8 @@ def test_workers_lists_only_active(client):
     assert ids == ["001", "002"]
 
 
-def test_sync_is_idempotent_and_rejects_unknown(client):
+def test_sync_is_idempotent_and_rejects_unknown(admin_client):
+    client = admin_client
     first = sync(client, ("a", "001", local(12, 7), "in"), ("x", "999", local(12, 7), "in"),
                  ("y", "003", local(12, 7), "in"))
     assert first["accepted"] == ["a"]
@@ -35,7 +36,8 @@ def test_sync_is_idempotent_and_rejects_unknown(client):
     assert len(client.get("/api/scans", params={"day": "2026-10-12"}).json()) == 1
 
 
-def test_resync_can_flip_direction_but_not_resurrect(client):
+def test_resync_can_flip_direction_but_not_resurrect(admin_client):
+    client = admin_client
     sync(client, ("a", "001", local(12, 7), "in"))
     sync(client, ("a", "001", local(12, 7), "out"))
     [row] = client.get("/api/scans", params={"day": "2026-10-12"}).json()
@@ -52,7 +54,8 @@ def test_presence_shows_who_is_in_now(client):
     assert [p["worker_id"] for p in client.get("/api/presence").json()] == ["001"]
 
 
-def test_exception_fixed_by_admin_scan_with_audit(client):
+def test_exception_fixed_by_admin_scan_with_audit(admin_client):
+    client = admin_client
     client.post("/api/settings/rates", json={"effective_date": "2026-01-01", "hourly_rate": 30})
     sync(client, ("a", "001", local(12, 7), "in"))  # never scanned out
     exc = client.get("/api/exceptions", params={"start": "2026-10-12", "end": "2026-10-12"}).json()
@@ -73,7 +76,8 @@ def test_exception_fixed_by_admin_scan_with_audit(client):
     assert edit["action"] == "add" and edit["new_direction"] == "out"
 
 
-def test_report_refuses_without_rate_and_exports_xlsx(client):
+def test_report_refuses_without_rate_and_exports_xlsx(admin_client):
+    client = admin_client
     sync(client, ("a", "001", local(12, 7), "in"), ("b", "001", local(12, 17), "out"))
     r = client.get("/api/reports/hours", params={"start": "2026-10-12", "end": "2026-10-18"})
     assert r.status_code == 409

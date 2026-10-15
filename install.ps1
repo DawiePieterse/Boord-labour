@@ -198,6 +198,24 @@ try {
     }
     Write-Ok "Dependencies installed"
 
+    # --- Step 5b: Admin PIN ---
+    # Pay, rates and corrections sit behind this PIN; the door phone never
+    # gets it. Set here, at the server, because the web page deliberately
+    # cannot set the first one (backend/admin_auth.py). A re-run keeps the
+    # existing PIN - backend\set_pin.py changes it.
+    if (-not (Test-Path (Join-Path $DataDir "admin_pin.txt"))) {
+        Write-Step "Choose the admin PIN (at least 4 characters)..."
+        Push-Location $BackendDir
+        & $venvPython set_pin.py
+        Pop-Location
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "No PIN was set. Admin stays locked until you run, in the backend folder:"
+            Write-Warn "    .venv\Scripts\python set_pin.py"
+        }
+    } else {
+        Write-Ok "Admin PIN already set (backend\set_pin.py changes it)"
+    }
+
     # --- Step 6: Launcher ---
     Write-Step "Creating the server launcher..."
     # --host 127.0.0.1 is load-bearing, not a default. The app has no sign-in

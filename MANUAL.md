@@ -13,8 +13,8 @@ Boord must already be installed on the same PC.
 1. Put this folder beside Boord (e.g. `C:\Boord` and `C:\Boord-labour`).
 2. Double-click **install.bat** and accept the administrator prompt. It
    installs Python if needed, finds Boord's `data\boord.db` (or asks you for
-   it), and registers the **Boord Labour Server** task, which starts with
-   Windows on port **8040**.
+   it), asks you to choose the **admin PIN** (see 1a), and registers the
+   **Boord Labour Server** task, which starts with Windows on port **8040**.
 3. Publish the app on Tailscale. Boord keeps 443, and Labour takes 8040:
    ```
    tailscale serve --bg --https=8040 http://localhost:8040
@@ -26,22 +26,51 @@ Boord must already be installed on the same PC.
 
 ### Access
 
-There is no password. The server listens on `127.0.0.1` only, so the only
-way in is through Tailscale, and **being on the farm's tailnet is the whole
-of the security**. Anyone who can open the address can change hours and pay.
-Use `serve`, never `funnel`. To revoke someone, remove their device in the
-Tailscale admin console.
+The app has two parts:
+
+| Address | Who | What |
+| --- | --- | --- |
+| `…ts.net:8040/` | the phone at the door | the scanner, and who is inside now |
+| `…ts.net:8040/admin/` | the admin, **with the PIN** | Today, Fix, Pay, Settings |
+
+The server listens on `127.0.0.1` only, so the only way in at all is
+through Tailscale. Use `serve`, never `funnel`. Tailscale alone cannot keep
+the door phone out of pay, because that phone has to be on Tailscale for
+its camera. That is the PIN's job: the server refuses every pay, rate and
+correction request without it, whatever page asked.
+
+Boord Admin has a **Packhouse labour** link next to its tabs that opens
+`/admin/` on the same server.
+
+### 1a. Admin PIN
+
+- **Set at install.** The installer asks for it (at least 4 characters).
+  The web page can never set the first PIN, so a fresh install can't be
+  claimed by whichever phone opens it first.
+- **Signing in** on a phone keeps it signed in until someone taps **Sign
+  out of Admin**, or the PIN changes.
+- **Change it** under Admin → Settings. That signs out **every other
+  phone**, which is how you lock out a lost phone or someone who has left.
+- **Forgot it?** On the server, in the `backend` folder:
+  ```
+  .venv\Scripts\python set_pin.py
+  ```
+  This sets a new PIN and signs every phone out.
+- **Five wrong PINs** lock Admin sign-in for 5 minutes.
 
 ## 2. Setting up a phone
 
-The phones are the ones already on the tailnet for Boord Admin.
+**The door phone** (the person scanning never gets the PIN):
 
 1. Open `https://<server>.<tailnet>.ts.net:8040/` in Chrome (Android) or
    Safari (iPhone), and **Add to Home screen**.
 2. Allow the camera when asked. The camera only works on the `https://`
    Tailscale address, never on a plain `http://` one.
-3. **Settings → This phone**: give it a name such as "Door 1". Every scan
-   carries that name.
+3. Tap the phone's name under **Boord Labour** in the header and call it
+   something like "Door 1". Every scan carries that name.
+
+**The admin's phone or PC:** open `…ts.net:8040/admin/` (or the Packhouse
+labour link in Boord Admin) and sign in with the PIN.
 
 ## 3. At the door
 
@@ -59,10 +88,13 @@ so holding it in front of the camera is harmless.
 they were scanned and are sent when the connection returns. The header says
 "offline - scans saved", and *Waiting to sync* counts them.
 
+The **Inside** tab lists who is in the building now, with the time they
+came in. It shows no hours or pay.
+
 If a worker says the screen showed IN when they were leaving, they missed
 their morning scan. Tell the admin, who adds it under **Fix**.
 
-## 4. Fixing missed scans
+## 4. Fixing missed scans (Admin)
 
 **Fix** lists every scan that has no partner: an IN with no OUT, or an OUT
 with no IN. **Those hours are not paid until they are fixed.**
@@ -77,9 +109,9 @@ the phone that made it.
 
 An IN with no OUT after 18 hours counts as a forgotten exit.
 
-## 5. Rates and overtime
+## 5. Rates and overtime (Admin)
 
-**Settings → Hourly rate.** Nothing is paid until a rate exists. A rate
+**Admin → Settings → Hourly rate.** Nothing is paid until a rate exists. A rate
 applies from its date onward, and earlier days keep the rate they had. To
 change the rate, add a new one; don't edit the old one.
 
@@ -93,7 +125,7 @@ Overtime follows the BCEA pattern:
 All three numbers are set with the rate. A shift counts on the day it
 started, so a night shift is paid on its first day.
 
-## 6. The pay report
+## 6. The pay report (Admin)
 
 **Pay**: pick a period (This week, Last week, or any dates) and tap
 **Show**. **Export** downloads an Excel file with three sheets:

@@ -1,4 +1,6 @@
-// Boord Labour - the door scanner and the admin screens around it.
+// Boord Labour - the door scanner. Pay, rates and corrections are NOT here:
+// they live at /admin/ behind the admin PIN, because this phone is in the
+// hands of whoever is on the door.
 //
 // A scan is decided on the phone, from what it knows: if this worker is
 // inside (server presence + this phone's own unsynced scans) it is an OUT,
@@ -35,12 +37,8 @@ async function loadWorkers() {
   try {
     const list = await Boord.api("/api/workers");
     localStorage.setItem("labour_workers", JSON.stringify(list));
-    localStorage.setItem("labour_workers_at", new Date().toISOString());
   } catch (e) { /* offline - keep the cached list */ }
   workers = new Map(cachedJSON("labour_workers", []).map((w) => [w.id, w]));
-  const at = localStorage.getItem("labour_workers_at");
-  $("workerCacheInfo").textContent = `${workers.size} workers known on this phone` +
-    (at ? `, list from ${Boord.fmtDateTime(at)}` : "");
 }
 
 // Who is inside = the server's view, then this phone's not-yet-synced scans
@@ -215,184 +213,11 @@ function renderToday() {
   }).join("") || `<li class="py-2 text-slate-500">Nobody is scanned in.</li>`;
 }
 
-// --------------------------------------------------------------------------
-// Fix: exceptions and hand corrections
-// --------------------------------------------------------------------------
-async function renderFix() {
-  let list = [];
-  try { list = await Boord.api("/api/exceptions"); } catch (e) {
-    $("exceptionList").innerHTML = `<li class="py-2 text-slate-500">Needs a connection to the server.</li>`;
-    return;
-  }
-  setFixBadge(list.length);
-  $("exceptionList").innerHTML = list.map((e) => {
-    const missingExit = e.kind === "missing_exit";
-    return `<li class="py-2">
-      <div><b>${esc(e.name)}</b> <span class="text-slate-400">#${esc(e.worker_id)}</span></div>
-      <div class="text-slate-600">${missingExit ? "Scanned IN" : "Scanned OUT"} ${Boord.fmtDateTime(e.ts)} -
-        no ${missingExit ? "exit" : "entry"} scan</div>
-      <div class="flex gap-2 mt-1">
-        <button class="border rounded-lg px-2 py-1" data-add="${esc(e.worker_id)}" data-dir="${missingExit ? "out" : "in"}"
-          data-ts="${esc(e.ts)}">Add ${missingExit ? "exit" : "entry"} time</button>
-        <button class="border rounded-lg px-2 py-1 text-red-700" data-del="${esc(e.uuid)}">Delete this scan</button>
-      </div></li>`;
-  }).join("") || `<li class="py-2 text-slate-500">Nothing to fix.</li>`;
-  await renderDayScans();
-}
-
-function setFixBadge(n) {
-  $("fixBadge").textContent = n;
-  $("fixBadge").classList.toggle("hidden", !n);
-}
-
-async function renderDayScans() {
-  const day = $("scanDay").value;
-  let rows = [];
-  try { rows = await Boord.api(`/api/scans?day=${day}`); } catch (e) { return; }
-  $("dayScanList").innerHTML = rows.map((s) => `<li class="py-2 flex justify-between items-center gap-2">
-      <span><b class="${s.direction === "in" ? "text-green-700" : "text-red-700"}">${s.direction.toUpperCase()}</b>
-        ${Boord.fmtTime(s.ts)} ${esc(s.name)}
-        <span class="text-slate-400">${esc(s.device_label)}${s.source === "admin" ? " · by hand" : ""}</span></span>
-      <span class="flex gap-1">
-        <button class="border rounded px-2" data-edit="${esc(s.uuid)}" data-ts="${esc(s.ts)}" data-dir="${s.direction}"
-          data-name="${esc(s.name)}"><i class="fa-solid fa-pen"></i></button>
-        <button class="border rounded px-2 text-red-700" data-del="${esc(s.uuid)}"><i class="fa-solid fa-trash"></i></button>
-      </span></li>`).join("") || `<li class="py-2 text-slate-500">No scans that day.</li>`;
-}
-
-// datetime-local wants "YYYY-MM-DDTHH:MM" in local time.
-function toLocalInput(date) {
-  const d = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return d.toISOString().slice(0, 16);
-}
-
-let scanFormSubmit = null;
-function openScanForm({ title, workerId, ts, direction, onSubmit }) {
-  $("scanFormTitle").textContent = title;
-  const sel = $("scanFormWorker");
-  $("scanFormWorkerWrap").classList.toggle("hidden", workerId !== undefined);
-  sel.innerHTML = [...workers.values()].map((w) =>
-    `<option value="${esc(w.id)}">${esc(w.id)} - ${esc(w.name)}</option>`).join("");
-  if (workerId) sel.value = workerId;
-  $("scanFormTime").value = toLocalInput(ts || new Date());
-  $("scanFormDir").value = direction || "in";
-  $("scanFormReason").value = "";
-  scanFormSubmit = onSubmit;
-  $("scanForm").classList.remove("hidden");
-  $("scanForm").classList.add("flex");
-}
-
-function closeScanForm() {
-  $("scanForm").classList.add("hidden");
-  $("scanForm").classList.remove("flex");
-}
-
-async function onFixClick(ev) {
-  const btn = ev.target.closest("button");
-  if (!btn) return;
-  try {
-    if (btn.dataset.add) {
-      openScanForm({
-        title: "Add the missing scan", workerId: btn.dataset.add,
-        ts: Boord.parseServerDate(btn.dataset.ts), direction: btn.dataset.dir,
-        onSubmit: (f) => Boord.api("/api/scans", { method: "POST", body: { worker_id: btn.dataset.add, ...f } }),
-      });
-    } else if (btn.dataset.edit) {
-      openScanForm({
-        title: `Change scan - ${btn.dataset.name}`, workerId: null,
-        ts: Boord.parseServerDate(btn.dataset.ts), direction: btn.dataset.dir,
-        onSubmit: (f) => Boord.api(`/api/scans/${btn.dataset.edit}`, { method: "PATCH", body: f }),
-      });
-    } else if (btn.dataset.del) {
-      const reason = prompt("Delete this scan. Why? (kept on record)");
-      if (!reason || !reason.trim()) return;
-      await Boord.api(`/api/scans/${btn.dataset.del}/delete`, {
-        method: "POST", body: { reason, device_label: deviceLabel() } });
-      Boord.toast("Scan deleted");
-      renderFix();
-    }
-  } catch (e) {
-    Boord.toast(Boord.errorDetail(e));
-  }
-}
-
-// --------------------------------------------------------------------------
-// Pay report
-// --------------------------------------------------------------------------
-function mondayOf(d) {
-  const m = new Date(d);
-  m.setHours(12, 0, 0, 0);
-  m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
-  return m;
-}
-
-function setWeek(offsetWeeks) {
-  const mon = mondayOf(new Date());
-  mon.setDate(mon.getDate() + 7 * offsetWeeks);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  $("repStart").value = Boord.localDateStr(mon);
-  $("repEnd").value = Boord.localDateStr(sun);
-}
-
-const money = (n) => `R ${Number(n).toFixed(2)}`;
-
-async function showReport() {
-  const q = `start=${$("repStart").value}&end=${$("repEnd").value}`;
-  const warn = $("repWarning");
-  try {
-    const r = await Boord.api(`/api/reports/hours?${q}`);
-    $("repBody").innerHTML = r.workers.map((w) => `<tr class="border-t">
-        <td>${esc(w.worker_id)}</td><td>${esc(w.name)}</td><td class="text-right">${w.days}</td>
-        <td class="text-right">${w.hours.toFixed(2)}</td><td class="text-right">${w.overtime.toFixed(2)}</td>
-        <td class="text-right">${money(w.amount)}</td></tr>`).join("") +
-      `<tr class="border-t font-bold"><td></td><td>Total</td><td></td><td></td><td></td>
-        <td class="text-right">${money(r.total)}</td></tr>`;
-    warn.classList.toggle("hidden", !r.unresolved);
-    warn.textContent = `${r.unresolved} unpaired scan(s) in this period are not paid yet - see Fix.`;
-  } catch (e) {
-    $("repBody").innerHTML = "";
-    warn.classList.remove("hidden");
-    warn.textContent = Boord.errorDetail(e, "Needs a connection to the server");
-  }
-}
-
-async function exportReport() {
-  const start = $("repStart").value, end = $("repEnd").value;
-  try {
-    const blob = await Boord.api(`/api/reports/hours?start=${start}&end=${end}&format=xlsx`, { timeoutMs: 60000 });
-    Boord.downloadBlob(blob, `labour-hours-${start}-to-${end}.xlsx`);
-  } catch (e) {
-    Boord.toast(Boord.errorDetail(e));
-  }
-}
-
-// --------------------------------------------------------------------------
-// Settings
-// --------------------------------------------------------------------------
-async function renderSettings() {
-  $("deviceLabelInput").value = deviceLabel();
-  try {
-    const rates = await Boord.api("/api/settings/rates");
-    $("rateList").innerHTML = rates.map((r) => `<li class="py-1">From <b>${esc(r.effective_date)}</b>:
-      ${money(r.hourly_rate)}/h, overtime ×${r.ot_multiplier} after ${r.daily_ot_after_h}h/day or
-      ${r.weekly_ot_after_h}h/week</li>`).join("") ||
-      `<li class="py-1 text-red-700">No rate set - the pay report will refuse to calculate until one is added.</li>`;
-  } catch (e) { /* offline */ }
-}
-
-async function saveRate() {
-  try {
-    await Boord.api("/api/settings/rates", { method: "POST", body: {
-      effective_date: $("rateDate").value, hourly_rate: Number($("rateHourly").value),
-      ot_multiplier: Number($("rateMult").value), daily_ot_after_h: Number($("rateDaily").value),
-      weekly_ot_after_h: Number($("rateWeekly").value),
-    } });
-    Boord.toast("Rate saved");
-    renderSettings();
-  } catch (e) {
-    Boord.toast(Boord.errorDetail(e));
-  }
+function renamePhone() {
+  const name = prompt("Name for this phone, shown on its scans (e.g. Door 1)", deviceLabel());
+  if (name === null) return;
+  localStorage.setItem("labour_device_label", name.trim() || "Phone");
+  $("deviceLabel").textContent = deviceLabel();
 }
 
 // --------------------------------------------------------------------------
@@ -406,9 +231,6 @@ function showTab(name) {
   // The camera only runs on the Scan tab - it is the battery's biggest cost.
   if (name === "scan") startCamera(); else stopCamera();
   if (name === "today") renderToday();
-  if (name === "fix") renderFix();
-  if (name === "report") showReport();
-  if (name === "settings") renderSettings();
 }
 
 Boord.boot(async () => {
@@ -420,41 +242,7 @@ Boord.boot(async () => {
   document.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.nav)));
   $("cameraBtn").addEventListener("click", startCamera);
   $("resultClose").addEventListener("click", hideResult);
-  $("exceptionList").addEventListener("click", onFixClick);
-  $("dayScanList").addEventListener("click", onFixClick);
-  $("scanDay").value = Boord.localDateStr();
-  $("scanDay").addEventListener("change", renderDayScans);
-  $("addScanBtn").addEventListener("click", () => openScanForm({
-    title: "Add a scan by hand", ts: new Date(),
-    onSubmit: (f) => Boord.api("/api/scans", { method: "POST", body: { worker_id: $("scanFormWorker").value, ...f } }),
-  }));
-  $("scanFormCancel").addEventListener("click", closeScanForm);
-  $("scanFormEl").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    try {
-      await scanFormSubmit({
-        timestamp: new Date($("scanFormTime").value).toISOString(),
-        direction: $("scanFormDir").value, reason: $("scanFormReason").value, device_label: deviceLabel(),
-      });
-      closeScanForm();
-      Boord.toast("Saved");
-      renderFix();
-    } catch (e) {
-      Boord.toast(Boord.errorDetail(e));
-    }
-  });
-  document.querySelectorAll("[data-preset]").forEach((b) =>
-    b.addEventListener("click", () => { setWeek(b.dataset.preset === "this" ? 0 : -1); showReport(); }));
-  $("repShow").addEventListener("click", showReport);
-  $("repExport").addEventListener("click", exportReport);
-  $("saveDeviceLabel").addEventListener("click", () => {
-    localStorage.setItem("labour_device_label", $("deviceLabelInput").value.trim() || "Phone");
-    $("deviceLabel").textContent = deviceLabel();
-    Boord.toast("Saved");
-  });
-  $("rateDate").value = Boord.localDateStr();
-  $("saveRate").addEventListener("click", saveRate);
-  setWeek(0);
+  $("deviceLabel").addEventListener("click", renamePhone);
 
   serverPresence = cachedJSON("labour_presence", []);
   await loadWorkers();
@@ -466,5 +254,4 @@ Boord.boot(async () => {
   setInterval(() => { if (currentTab === "today") renderToday(); }, 30000);
   setInterval(loadWorkers, 15 * 60 * 1000);
   IDB.prune().catch(() => {});
-  Boord.api("/api/exceptions").then((l) => setFixBadge(l.length)).catch(() => {});
 });

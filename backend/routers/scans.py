@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import field_validator
 from sqlmodel import Session, SQLModel, select
 
+from admin_auth import require_admin
 from db import get_boord_session, get_labour_session
 from models_boord import Worker
 from models_labour import Scan, ScanEdit
@@ -14,6 +15,10 @@ from routers.workers import worker_names
 from timeutil import day_bounds
 
 router = APIRouter(prefix="/api", tags=["scans"])
+
+# Everything below the door section is admin-only. sync and presence stay
+# open: they are what the door phone runs on.
+ADMIN = [Depends(require_admin)]
 
 
 def naive_utc(dt: datetime) -> datetime:
@@ -92,7 +97,7 @@ def presence(session: Session = Depends(get_labour_session),
 # --------------------------------------------------------------------------- #
 # Admin: exceptions and corrections
 # --------------------------------------------------------------------------- #
-@router.get("/exceptions")
+@router.get("/exceptions", dependencies=ADMIN)
 def exceptions(start: Optional[date] = None, end: Optional[date] = None,
                session: Session = Depends(get_labour_session),
                boord: Session = Depends(get_boord_session)):
@@ -109,7 +114,7 @@ def exceptions(start: Optional[date] = None, end: Optional[date] = None,
                    for e in paired.exceptions if lo <= e.ts <= hi), key=lambda r: r["ts"])
 
 
-@router.get("/scans")
+@router.get("/scans", dependencies=ADMIN)
 def scans_on_day(day: Optional[date] = None, worker_id: Optional[str] = None,
                  session: Session = Depends(get_labour_session),
                  boord: Session = Depends(get_boord_session)):
@@ -158,7 +163,7 @@ def _audit(session: Session, scan: Scan, action: str, body: _Reasoned, old_ts=No
                          new_direction="" if action == "delete" else scan.direction))
 
 
-@router.post("/scans")
+@router.post("/scans", dependencies=ADMIN)
 def add_scan(body: ScanAdd, session: Session = Depends(get_labour_session),
              boord: Session = Depends(get_boord_session)):
     if boord.get(Worker, body.worker_id) is None:
@@ -178,7 +183,7 @@ def _live_scan(session: Session, uuid: str) -> Scan:
     return scan
 
 
-@router.patch("/scans/{uuid}")
+@router.patch("/scans/{uuid}", dependencies=ADMIN)
 def change_scan(uuid: str, body: ScanChange, session: Session = Depends(get_labour_session)):
     scan = _live_scan(session, uuid)
     old_ts, old_dir = scan.timestamp, scan.direction
@@ -192,7 +197,7 @@ def change_scan(uuid: str, body: ScanChange, session: Session = Depends(get_labo
     return {"ok": True}
 
 
-@router.post("/scans/{uuid}/delete")
+@router.post("/scans/{uuid}/delete", dependencies=ADMIN)
 def delete_scan(uuid: str, body: ScanDelete, session: Session = Depends(get_labour_session)):
     """POST rather than DELETE: it carries a body (the reason), and a DELETE
     body is something proxies and fetch() treat inconsistently."""
@@ -204,7 +209,7 @@ def delete_scan(uuid: str, body: ScanDelete, session: Session = Depends(get_labo
     return {"ok": True}
 
 
-@router.get("/edits")
+@router.get("/edits", dependencies=ADMIN)
 def edits(limit: int = 200, session: Session = Depends(get_labour_session)):
     rows = session.exec(select(ScanEdit).order_by(ScanEdit.at.desc()).limit(limit)).all()
     return [{**r.model_dump(), "at": iso_utc(r.at), "old_ts": iso_utc(r.old_ts), "new_ts": iso_utc(r.new_ts)}
