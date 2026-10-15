@@ -143,7 +143,14 @@ async function onDecoded(text) {
 
   const id = text.trim();
   const now = Date.now();
-  const worker = workers.get(id);
+  let worker = workers.get(id);
+  if (!worker) {
+    // Not in this phone's copy of the list - maybe added in Boord since the
+    // last 15-minute refresh. Ask the server before turning them away.
+    // Offline, loadWorkers keeps the cached list and they are refused below.
+    await loadWorkers();
+    worker = workers.get(id);
+  }
   // Scanned again straight after - someone tapped twice at the door. Saying
   // so beats silently recording an OUT ten seconds after the IN (pay.py
   // would drop it anyway, but this phone would then show them as gone).
