@@ -113,7 +113,7 @@ async function startCamera() {
   } catch (e) {
     scanner = null;
     $("cameraBtn").classList.remove("hidden");
-    Boord.toast("Camera unavailable - allow camera access, then tap Start camera");
+    Boord.toast("Camera unavailable - allow camera access, then tap Scan Worker QR");
   }
 }
 
