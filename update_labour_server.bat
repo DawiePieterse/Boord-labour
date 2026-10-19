@@ -110,7 +110,11 @@ echo ==^> Fetching signed releases from GitHub...
 :: This script only needs the refs; it has no business repacking a farm's
 :: repo, so turn that gc off for the fetch. Cleaning loose objects is a
 :: deliberate, server-stopped maintenance job, not an update side effect.
-git -c gc.auto=0 fetch --tags --force origin
+::
+:: --prune-tags so a tag deleted on GitHub is deleted here too. Without it a
+:: stray tag (a v2.16 pushed here by mistake) stays the "newest" release on
+:: every farm forever, and no real release sorting below it ever deploys.
+git -c gc.auto=0 fetch --tags --force --prune --prune-tags origin
 if %errorLevel% neq 0 (
     echo.
     echo Fetch failed - check the error above ^(no internet, or this folder
@@ -151,10 +155,10 @@ if "!CURTAG!"=="!NEWTAG!" (
 ) else (
     echo.
     echo ==^> Verifying the signature on !NEWTAG!...
-    :: --raw prints GPG's machine-readable status lines. A VALIDSIG line means
-    :: the signature is good; requiring OUR fingerprint on that line is the
-    :: part that matters, because a plain "good signature" only proves the tag
-    :: was signed by *some* key present in this machine's keyring.
+    rem --raw prints GPG's machine-readable status lines. A VALIDSIG line means
+    rem the signature is good; requiring OUR fingerprint on that line is the
+    rem part that matters, because a plain "good signature" only proves the tag
+    rem was signed by *some* key present in this machine's keyring.
     set "VERIFY_OUT=%TEMP%\boord_labour_verify.txt"
     git verify-tag --raw "!NEWTAG!" > "!VERIFY_OUT!" 2>&1
     findstr /C:"VALIDSIG" "!VERIFY_OUT!" > "!VERIFY_OUT!.sig"
@@ -193,9 +197,9 @@ if "!CURTAG!"=="!NEWTAG!" (
 
     echo.
     echo ==^> Updating to !NEWTAG!...
-    :: --force so a half-finished edit on the server can't block a deploy.
-    :: Anything under data\ is gitignored and is left alone; only tracked
-    :: code files are reset to exactly what the signed tag contains.
+    rem --force so a half-finished edit on the server can't block a deploy.
+    rem Anything under data\ is gitignored and is left alone; only tracked
+    rem code files are reset to exactly what the signed tag contains.
     git checkout --force "!NEWTAG!"
     if errorlevel 1 (
         echo.
