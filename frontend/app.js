@@ -254,8 +254,9 @@ function renamePhone() {
 function showTab(name) {
   currentTab = name;
   document.querySelectorAll("[data-tab]").forEach((s) => s.classList.toggle("hidden", s.dataset.tab !== name));
+  // .tab-active (shared/styles.css) is the brand blue, the same as the header.
   document.querySelectorAll("[data-nav]").forEach((b) =>
-    b.classList.toggle("text-blue-800", b.dataset.nav === name));
+    b.classList.toggle("tab-active", b.dataset.nav === name));
   // Leaving the Scan tab stops the camera - it is the battery's biggest cost.
   // Coming back does not restart it; that waits for the button.
   if (name !== "scan") stopCamera();

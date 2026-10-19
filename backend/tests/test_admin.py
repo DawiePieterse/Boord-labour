@@ -47,7 +47,10 @@ def test_changing_pin_signs_other_phones_out(admin_client):
 
 
 def test_pin_change_rules(admin_client):
-    assert admin_client.post("/api/admin/pin", json={"current": "1111", "new": "9876"}).status_code == 401
+    # A wrong current PIN is a 400, not a 401: a 401 would make admin.js show
+    # the PIN screen and sign out the phone that is mid-change.
+    assert admin_client.post("/api/admin/pin", json={"current": "1111", "new": "9876"}).status_code == 400
+    assert admin_client.get("/api/admin/me").status_code == 200  # still signed in
     assert admin_client.post("/api/admin/pin", json={"current": ADMIN_PIN, "new": "123"}).status_code == 422
 
 

@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Boord Labour - Admin</title>
 <link rel="icon" href="../icons/icon-192.png">
 <meta name="theme-color" content="#0A2F6B">
@@ -27,7 +28,7 @@
 <div id="pinScreen" class="hidden p-6 max-w-sm mx-auto">
   <form id="pinForm" class="bg-white rounded-xl shadow p-4 space-y-3 mt-8">
     <div class="font-bold text-lg"><i class="fa-solid fa-lock"></i> Admin PIN</div>
-    <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" required
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" required minlength="4"
       class="w-full border rounded-lg px-3 py-2 text-2xl tracking-widest text-center">
     <div id="pinError" class="text-sm text-red-700"></div>
     <button class="w-full boord-btn-primary rounded-lg py-2 font-semibold">Sign in</button>
@@ -113,7 +114,7 @@
       </div>
       <div class="flex gap-2">
         <button id="changePin" class="boord-btn-primary rounded-lg px-3 py-1">Change PIN</button>
-        <button id="signOut" class="border rounded-lg px-3 py-1">Sign out of Admin</button>
+        <button id="signOut" class="border rounded-lg px-3 py-1">Sign out</button>
       </div>
     </div>
   </section>
@@ -140,7 +141,7 @@
   </form>
 </div>
 
-<nav id="adminNav" class="hidden fixed bottom-0 inset-x-0 bg-white border-t grid grid-cols-4 text-xs z-30">
+<nav id="adminNav" class="hidden fixed bottom-0 inset-x-0 bg-white border-t grid grid-cols-4 text-xs z-30 safe-bottom">
   <button data-nav="today" class="py-2"><i class="fa-solid fa-users text-lg block"></i>Today</button>
   <button data-nav="fix" class="py-2 relative"><i class="fa-solid fa-triangle-exclamation text-lg block"></i>Fix
     <span id="fixBadge" class="hidden absolute top-1 right-6 bg-red-600 text-white rounded-full px-1.5 text-[10px]"></span></button>

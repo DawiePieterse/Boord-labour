@@ -31,8 +31,9 @@ BOORD_PHOTOS_DIR = os.path.join(os.path.dirname(BOORD_DB_PATH), "photos")
 # Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030.
 #
 # The installer binds this to 127.0.0.1 only, and `tailscale serve` is what
-# publishes it to the tailnet. The app has no sign-in of its own, so that
-# binding is the access control - see MANUAL.md.
+# publishes it to the tailnet. That binding decides who can reach the app at
+# all; the admin PIN (admin_auth.py) then separates the door phone from the
+# admin - see MANUAL.md.
 LABOUR_PORT = int(os.environ.get("LABOUR_PORT", "8040"))
 
 FRONTEND_DIR = os.path.join(REPO_ROOT, "frontend")

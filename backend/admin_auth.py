@@ -32,7 +32,8 @@ COOKIE_MAX_AGE = 10 * 365 * 24 * 3600  # "no expiry" - browsers cap cookie lifet
 MIN_PIN_LENGTH = 4
 _ITERATIONS = 200_000
 
-# ponytail: one global counter, not per phone - this app has one admin.
+# One global failure counter, not one per phone: this app has one admin, so
+# counting per phone would only give someone guessing more tries.
 MAX_FAILURES = 5
 LOCKOUT_SECONDS = 300
 _failures = 0

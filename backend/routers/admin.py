@@ -43,8 +43,12 @@ def me():
 def change_pin(body: PinChange, response: Response):
     """Signs every other phone out (their cookies carry the old PIN's
     fingerprint) and re-issues this phone's cookie so it stays in."""
+    # 400, not 401. This phone IS signed in - require_admin has just said so -
+    # and admin.js answers any 401 by throwing up the PIN screen, so a typo in
+    # the "Current PIN" box used to sign the admin out mid-change. 401 stays
+    # reserved for "this phone has no valid cookie".
     if not admin_auth.check_pin(body.current):
-        raise HTTPException(401, "The current PIN is wrong")
+        raise HTTPException(400, "The current PIN is wrong")
     try:
         admin_auth.set_pin(body.new)
     except ValueError as e:

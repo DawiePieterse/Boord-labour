@@ -48,7 +48,7 @@ Boord Admin has a **Packhouse labour** link next to its tabs that opens
   The web page can never set the first PIN, so a fresh install can't be
   claimed by whichever phone opens it first.
 - **Signing in** on a phone keeps it signed in until someone taps **Sign
-  out of Admin**, or the PIN changes.
+  out** (Admin → Settings), or the PIN changes.
 - **Change it** under Admin → Settings. That signs out **every other
   phone**, which is how you lock out a lost phone or someone who has left.
 - **Forgot it?** On the server, in the `backend` folder:
@@ -159,6 +159,14 @@ an archive over `data\labour.db`, and start the task again.
 restarts the server. It uses the same release key as Boord. Before the
 first update, write the key's fingerprint into `data\release_key.fpr` (the
 installer prints the command, reusing Boord's fingerprint if it finds one).
+
+**Installed before 1.0.3? Run install.bat once more.** Older installers
+registered the **Boord Labour Server** task with Windows' default limit of
+72 hours, so Windows stopped the server three days after each restart, and
+did not start it again if it crashed. The installer now removes that limit
+and has the task restart the server (up to 10 times, a minute apart).
+Updating does not change the task: only re-running **install.bat** does.
+It keeps your data and PIN.
 
 ## 9. Uptime
 

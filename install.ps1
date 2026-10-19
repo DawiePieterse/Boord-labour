@@ -218,12 +218,14 @@ try {
 
     # --- Step 6: Launcher ---
     Write-Step "Creating the server launcher..."
-    # --host 127.0.0.1 is load-bearing, not a default. The app has no sign-in
-    # of its own, so whoever can reach this port can read and change every worker's hours and pay.
-    # Binding loopback means the only way in is `tailscale serve`, which
-    # proxies to http://localhost:8040 and is reachable inside the tailnet
-    # only. Widening this to 0.0.0.0 publishes the time clock and pay report to anyone
-    # on the farm's wifi, with no password to stop them.
+    # --host 127.0.0.1 is load-bearing, not a default. Whoever can reach this
+    # port can use the door scanner and its few open endpoints (the worker
+    # list, scan sync, who is inside); only pay, rates and fixes sit behind
+    # the admin PIN. Binding loopback means the only way in is
+    # `tailscale serve`, which proxies to http://localhost:8040 and is
+    # reachable inside the tailnet only. Widening this to 0.0.0.0 publishes
+    # the time clock to anyone on the farm's wifi, with only a 4-digit PIN
+    # left between them and the pay report.
     $launcher = @"
 @echo off
 cd /d "$BackendDir"
@@ -253,7 +255,23 @@ set "BOORD_DB_PATH=$boordDb"
         schtasks /delete /tn "$TaskName" /f | Out-Null
     }
     schtasks /create /tn "$TaskName" /tr "`"$LauncherPath`"" /sc onstart /ru SYSTEM /rl highest /f | Out-Null
-    Write-Ok "Scheduled task '$TaskName' registered (runs at every startup, no one needs to log in)"
+    # schtasks can't set these, so they are applied afterwards (as BoordOwner's
+    # installer does). The default execution time limit (72h) would otherwise
+    # stop the time clock three days after every boot - mid-shift, with the
+    # door phone quietly queueing scans nobody syncs. And if the process dies
+    # (Boord's database not ready yet at boot, a crash), the task must start
+    # it again rather than leave the door phone offline until the next
+    # reboot. Best-effort: an old PowerShell without these cmdlets still gets
+    # the task itself.
+    try {
+        $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+            -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) `
+            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        Set-ScheduledTask -TaskName $TaskName -Settings $taskSettings | Out-Null
+        Write-Ok "Scheduled task '$TaskName' registered (runs at every startup, no one needs to log in, restarts itself if it stops)"
+    } catch {
+        Write-Warn "Task registered, but couldn't set its restart policy: $($_.Exception.Message)"
+    }
 
     # --- Step 9: Start it now ---
     Write-Step "Starting the server now..."
@@ -288,7 +306,8 @@ set "BOORD_DB_PATH=$boordDb"
     Write-Host "   `"C:\Program Files\Tailscale\tailscale.exe`" serve --bg --https=8040 http://localhost:$Port/" -ForegroundColor Yellow
     Write-Host ""
     Write-Host " It then answers at https://<machine>.<tailnet>.ts.net:8040/ for anyone"
-    Write-Host " on the tailnet, over HTTPS, with no sign-in."
+    Write-Host " on the tailnet, over HTTPS. The door page needs no sign-in; Admin"
+    Write-Host " (pay, rates, fixes) asks for the admin PIN."
     Write-Host ""
     Write-Host " 8040, not 443, IF Boord runs on this machine too - Boord takes 443, and" -ForegroundColor Yellow
     Write-Host " its Field QR scanner needs to be what the bare address reaches. Both" -ForegroundColor Yellow
@@ -296,11 +315,12 @@ set "BOORD_DB_PATH=$boordDb"
     Write-Host " app answers {\"detail\":\"Not Found\"}, which looks like anything but a" -ForegroundColor Yellow
     Write-Host " port clash. Check with: tailscale serve status" -ForegroundColor Yellow
     Write-Host ""
-    Write-Warn "There is no password on this app. Whoever can reach it can read every"
-    Write-Warn "hour and rand in it, so tailnet membership is the whole of its security."
-    Write-Warn "Use 'serve', NEVER 'funnel' - funnel would publish the farm's wages"
-    Write-Warn "on the open internet. Remove a departed person's device from the"
-    Write-Warn "Tailscale admin console; that is the only way to revoke access."
+    Write-Warn "Tailnet membership decides who can reach this app at all; the admin PIN"
+    Write-Warn "only separates the door phone from Admin. Use 'serve', NEVER 'funnel' -"
+    Write-Warn "funnel would put the farm's wages on the open internet behind nothing"
+    Write-Warn "but a short PIN. To revoke a departed person's device, remove it from"
+    Write-Warn "the Tailscale admin console, and change the admin PIN (set_pin.py),"
+    Write-Warn "which signs every phone out of Admin."
     Write-Host ""
     Write-Host " The server will now start automatically every time this PC turns on."
     Write-Host " update_labour_server.bat installs the newest SIGNED release and restarts it."

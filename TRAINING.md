@@ -86,7 +86,7 @@ It needs the **admin PIN**. Never give the PIN to the person on the door.
 Open the Labour address with **/admin/** on the end, or tap **Packhouse
 labour** next to the tabs in Boord Admin. Enter the PIN.
 
-A phone or PC stays signed in until someone taps **Sign out of Admin**
+A phone or PC stays signed in until someone taps **Sign out**
 (under **Settings**) or the PIN is changed.
 
 ### Today

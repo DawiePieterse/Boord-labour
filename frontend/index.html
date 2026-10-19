@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Boord Labour</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
@@ -81,7 +82,7 @@
   <button id="resultClose" class="mt-3 underline opacity-90">Done</button>
 </div>
 
-<nav class="fixed bottom-0 inset-x-0 bg-white border-t grid grid-cols-2 text-xs z-30">
+<nav class="fixed bottom-0 inset-x-0 bg-white border-t grid grid-cols-2 text-xs z-30 safe-bottom">
   <button data-nav="scan" class="py-2"><i class="fa-solid fa-qrcode text-lg block"></i>Scan</button>
   <button data-nav="today" class="py-2"><i class="fa-solid fa-users text-lg block"></i>Inside</button>
 </nav>

@@ -5,10 +5,11 @@ scan a worker's existing Boord badge at the warehouse door; this turns the
 scans into hours and pay. Reads Boord's data/boord.db read-only for the
 worker register.
 
-There is no sign-in. Every endpoint answers anyone who can reach the port,
-and the installer binds it to 127.0.0.1 so that "anyone" means the tailnet
-`tailscale serve` publishes it to. Read MANUAL.md's Access section before
-changing how this is served.
+Access has two layers. The installer binds the port to 127.0.0.1, so only
+the tailnet that `tailscale serve` publishes it to can reach it at all. On
+top of that, everything except the door page's few endpoints needs the admin
+PIN (admin_auth.require_admin), because the door phone is on the tailnet too.
+Read MANUAL.md's Access section before changing how this is served.
 """
 import os
 

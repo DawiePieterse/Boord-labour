@@ -182,7 +182,9 @@ function setWeek(offsetWeeks) {
   $("repEnd").value = Boord.localDateStr(sun);
 }
 
-const money = (n) => `R ${Number(n).toFixed(2)}`;
+// en-ZA, like every amount on Boord's screens: "R 1 234,50". The export
+// keeps plain numbers - it is built server-side for Excel, not from these.
+const money = (n) => Boord.fmtRand(n);
 
 async function showReport() {
   const warn = $("repWarning");
@@ -190,7 +192,7 @@ async function showReport() {
     const r = await api(`/api/reports/hours?start=${$("repStart").value}&end=${$("repEnd").value}`);
     $("repBody").innerHTML = r.workers.map((w) => `<tr class="border-t">
         <td>${esc(w.worker_id)}</td><td>${esc(w.name)}</td><td class="text-right">${w.days}</td>
-        <td class="text-right">${w.hours.toFixed(2)}</td><td class="text-right">${w.overtime.toFixed(2)}</td>
+        <td class="text-right">${Boord.fmtNum(w.hours, 2)}</td><td class="text-right">${Boord.fmtNum(w.overtime, 2)}</td>
         <td class="text-right">${money(w.amount)}</td></tr>`).join("") +
       `<tr class="border-t font-bold"><td></td><td>Total</td><td></td><td></td><td></td>
         <td class="text-right">${money(r.total)}</td></tr>`;
@@ -203,13 +205,24 @@ async function showReport() {
   }
 }
 
+// A season's workbook can take a while to build, and a button that looks
+// untouched after a tap gets tapped again - each tap another export queued on
+// the farm PC. So it is disabled and says what it is doing until it is done.
 async function exportReport() {
+  const btn = $("repExport");
+  if (btn.disabled) return;
   const start = $("repStart").value, end = $("repEnd").value;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Exporting...`;
   try {
     const blob = await api(`/api/reports/hours?start=${start}&end=${end}&format=xlsx`, { timeoutMs: 60000 });
     Boord.downloadBlob(blob, `labour-hours-${start}-to-${end}.xlsx`);
   } catch (e) {
     Boord.toast(Boord.errorDetail(e));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
   }
 }
 
@@ -219,7 +232,7 @@ async function exportReport() {
 async function renderSettings() {
   try {
     const rates = await api("/api/settings/rates");
-    $("rateList").innerHTML = rates.map((r) => `<li class="py-1">From <b>${esc(r.effective_date)}</b>:
+    $("rateList").innerHTML = rates.map((r) => `<li class="py-1">From <b>${esc(Boord.fmtDate(r.effective_date, r.effective_date))}</b>:
       ${money(r.hourly_rate)}/h, overtime ×${r.ot_multiplier} after ${r.daily_ot_after_h}h/day or
       ${r.weekly_ot_after_h}h/week</li>`).join("") ||
       `<li class="py-1 text-red-700">No rate set - the pay report will refuse to calculate until one is added.</li>`;
@@ -261,7 +274,8 @@ async function signOut() {
 function showTab(name) {
   currentTab = name;
   document.querySelectorAll("[data-tab]").forEach((s) => s.classList.toggle("hidden", s.dataset.tab !== name));
-  document.querySelectorAll("[data-nav]").forEach((b) => b.classList.toggle("text-blue-800", b.dataset.nav === name));
+  // .tab-active (shared/styles.css) is the brand blue, the same as the header.
+  document.querySelectorAll("[data-nav]").forEach((b) => b.classList.toggle("tab-active", b.dataset.nav === name));
   if (name === "today") renderToday();
   if (name === "fix") renderFix();
   if (name === "report") showReport();
@@ -270,6 +284,10 @@ function showTab(name) {
 
 Boord.boot(async () => {
   $("appVersion").textContent = `v${Boord.VERSION}`;
+  // Every list here swallows a failed fetch and keeps what it showed last, so
+  // without the banner an admin with no signal reads stale presence and
+  // exceptions as current. The door page (app.js) does the same.
+  Boord.offlineBanner("No connection to the server - showing what was loaded last");
   $("pinForm").addEventListener("submit", signIn);
   document.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.nav)));
   $("exceptionList").addEventListener("click", onFixClick);

@@ -2,9 +2,9 @@
 script asks it, and so does whoever is looking at a phone wondering why a
 screen looks wrong.
 
-ponytail: tag, state and the frontend VERSION line only. Boord's
-version.py also reports schema revision, backups and pending updates - port
-that if this app grows an update check.
+It reports the tag, the checkout state and the frontend VERSION line only.
+Boord's version.py also reports schema revision, backups and pending updates;
+port those if this app grows an update check.
 """
 import os
 import re
