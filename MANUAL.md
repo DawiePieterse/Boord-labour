@@ -184,5 +184,7 @@ the installer says so and prints the three commands that free it.
 
 ## 9. Uptime
 
-The watchdog and heartbeat scripts live in the **Boord** folder and cover
-every app on the PC, Boord Labour (port 8040) included.
+The watchdog and heartbeat scripts live in the **Boord Monitor** folder
+(in the **Boord** folder before Boord Monitor 2.0) and cover every app on
+the PC, Boord Labour (port 8040) included. Boord Monitor's MANUAL.md,
+chapter 11, explains both.
