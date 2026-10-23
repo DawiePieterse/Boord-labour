@@ -226,11 +226,42 @@ try {
     # reachable inside the tailnet only. Widening this to 0.0.0.0 publishes
     # the time clock to anyone on the farm's wifi, with only a 4-digit PIN
     # left between them and the pay report.
+    #
+    # The launcher restarts the server itself, 15 seconds after it exits for
+    # any reason. The task's restart policy (Step 8) does not cover this:
+    # Task Scheduler only acts on a task that failed to launch, and this one
+    # always launches - it is the .bat that keeps running or ends. Without the
+    # loop, a server that died (a crash, Boord's database still locked at
+    # boot) stayed down until the watchdog's next pass, five or more minutes
+    # later, with the door phone queueing scans nobody syncs. Ending the task
+    # (schtasks /end, stop_server.ps1, the updater) ends the loop with it.
+    #
+    # Everything the server prints goes to data\server.log, because a task
+    # running as SYSTEM has no window and the reason it died was otherwise
+    # lost every time. One old generation is kept, capped at 1 MB, so a
+    # server that crash-loops for weeks cannot fill the disk.
+    #
+    # Two small things that look odd and are load-bearing:
+    # - The wait is "ping", not "timeout": timeout refuses to run without a
+    #   console ("Input redirection is not supported") and returns at once,
+    #   which turns a broken server into a busy loop.
+    # - Each echo puts the redirect first. %time% ends in a digit, and a digit
+    #   right before the arrow is read as a handle number and eaten (see the
+    #   note in update_labour_server.bat).
     $launcher = @"
 @echo off
 cd /d "$BackendDir"
 set "BOORD_DB_PATH=$boordDb"
-"$venvPython" -m uvicorn main:app --host 127.0.0.1 --port $Port
+set "PYTHONUNBUFFERED=1"
+set "LOG=$DataDir\server.log"
+if not exist "$DataDir" mkdir "$DataDir"
+:loop
+if exist "%LOG%" for %%F in ("%LOG%") do if %%~zF GTR 1048576 move /y "%LOG%" "%LOG%.1" >nul
+>>"%LOG%" echo %date% %time%  Starting Boord Labour on port $Port
+"$venvPython" -m uvicorn main:app --host 127.0.0.1 --port $Port >>"%LOG%" 2>&1
+>>"%LOG%" echo %date% %time%  Server exited with code %errorlevel%; starting it again in 15 seconds
+ping -n 16 127.0.0.1 >nul
+goto loop
 "@
     Set-Content -Path $LauncherPath -Value $launcher -Encoding ASCII
     Write-Ok "Created $LauncherPath"
@@ -250,9 +281,51 @@ set "BOORD_DB_PATH=$boordDb"
     Write-Step "Registering the server to start automatically with Windows..."
     cmd /c "schtasks /query /tn ""$TaskName"" >nul 2>&1"
     if ($LASTEXITCODE -eq 0) {
-        cmd /c "schtasks /end /tn ""$TaskName"" >nul 2>&1"
-        Start-Sleep -Seconds 1
+        # stop_server.ps1, not a bare "schtasks /end": the uvicorn process
+        # outlives the launcher, and a re-install would then start the new
+        # launcher next to an old server still holding the port.
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "stop_server.ps1") -Port $Port -TaskName $TaskName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "The old server could not be stopped (see above). Restart the PC after this installer finishes."
+        }
         schtasks /delete /tn "$TaskName" /f | Out-Null
+    }
+
+    # --- Step 8a: Keep Windows from taking port 8040 ---
+    # Hyper-V, WSL and Docker reserve blocks of ports at every boot, and the
+    # block moves from boot to boot. When it lands on 8040, uvicorn cannot
+    # bind ("An attempt was made to access a socket in a way forbidden by its
+    # access permissions") and the time clock is down until a reboot that
+    # happens to reserve elsewhere - which looks exactly like a server that
+    # shuts off for no reason. Reserving the port for administrators keeps
+    # Windows from handing it out; programs can still listen on it. Done here
+    # because the server is stopped: netsh refuses a port that is in use.
+    Write-Step "Reserving port $Port so Windows cannot hand it to anything else..."
+    $reservedBy = $null
+    foreach ($line in (cmd /c "netsh int ipv4 show excludedportrange protocol=tcp 2>&1")) {
+        if ($line -match '^\s*(\d+)\s+(\d+)\s*(\*)?\s*$') {
+            if ([int]$matches[1] -le $Port -and $Port -le [int]$matches[2]) {
+                $reservedBy = if ($matches[3]) { "admin" } else { "windows" }
+            }
+        }
+    }
+    if ($reservedBy -eq "admin") {
+        Write-Ok "Port $Port is already reserved"
+    } elseif ($reservedBy -eq "windows") {
+        Write-Warn "Windows has reserved a range of ports that includes $Port this boot"
+        Write-Warn "(Hyper-V, WSL or Docker), so the server cannot start. To free it for good,"
+        Write-Warn "run these in an administrator window, then run install.bat again:"
+        Write-Warn "    net stop winnat"
+        Write-Warn "    netsh int ipv4 add excludedportrange protocol=tcp startport=$Port numberofports=1"
+        Write-Warn "    net start winnat"
+    } else {
+        $out = cmd /c "netsh int ipv4 add excludedportrange protocol=tcp startport=$Port numberofports=1 2>&1"
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "Port $Port reserved"
+        } else {
+            Write-Warn "Could not reserve port $Port ($(($out | Out-String).Trim()))."
+            Write-Warn "The server still works; Windows may just take the port on some boots."
+        }
     }
     schtasks /create /tn "$TaskName" /tr "`"$LauncherPath`"" /sc onstart /ru SYSTEM /rl highest /f | Out-Null
     # schtasks can't set these, so they are applied afterwards (as BoordOwner's
@@ -278,8 +351,10 @@ set "BOORD_DB_PATH=$boordDb"
     schtasks /run /tn "$TaskName" | Out-Null
 
     # --- Step 10: Confirm it answers ---
+    # 45 seconds, not 20: startup waits up to 30 for Boord's database to be
+    # readable (main.BOORD_WAIT_S) before it gives up.
     $serverUp = $false
-    for ($i = 0; $i -lt 20; $i++) {
+    for ($i = 0; $i -lt 45; $i++) {
         Start-Sleep -Seconds 1
         try {
             $resp = Invoke-WebRequest -Uri "http://localhost:$Port/" -UseBasicParsing -TimeoutSec 3
@@ -288,9 +363,9 @@ set "BOORD_DB_PATH=$boordDb"
     }
     if ($serverUp) { Write-Ok "Server is up and answering on port $Port" }
     else {
-        Write-Warn "The server did not answer on port $Port within 20 seconds."
-        Write-Warn "Run start_labour_server.bat directly in a window - errors print there"
-        Write-Warn "rather than being swallowed by the Scheduled Task."
+        Write-Warn "The server did not answer on port $Port within 45 seconds."
+        Write-Warn "Why is in $DataDir\server.log. The launcher keeps retrying"
+        Write-Warn "every 15 seconds, so it may still come up on its own."
     }
 
     # --- Step 11: Report the address and how to publish it ---
