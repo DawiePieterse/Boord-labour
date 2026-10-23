@@ -241,6 +241,28 @@ if errorlevel 1 (
 )
 
 echo.
+echo ==^> Stopping the server...
+:: Not just "schtasks /end". That ends the launcher; the uvicorn process it
+:: spawned can outlive it, keep port 8040 and labour.db open, and leave the
+:: new release unable to start. stop_server.ps1 ends the task, checks the
+:: port is actually free, and refuses rather than guessing. Done before the
+:: copy below, because a plain file copy of a database a live server is
+:: writing to can be unrecoverable (see backend/backup.py).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop_server.ps1"
+if errorlevel 1 (
+    echo.
+    echo *** THE SERVER COULD NOT BE STOPPED ***
+    echo.
+    echo Something is still listening on port 8040. Nothing has been changed
+    echo in the database. The code is on !NEWTAG! but the server was never
+    echo restarted, so it is still serving !CURTAG!. Read the message above
+    echo for what holds the port, stop it, and run this again.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
 echo ==^> Bringing the Labour database up to date...
 :: A cheap pre-change snapshot, matching Boord's habit. Kept per-run rather
 :: than overwritten, because "the copy from before the update that broke it"
@@ -256,9 +278,9 @@ if errorlevel 1 (
     echo.
     echo *** THE LABOUR DATABASE COULD NOT BE BROUGHT UP TO DATE ***
     echo.
-    echo The server has not been restarted. Read the error above. A copy of
-    echo the database was taken first - look for the newest labour-before-*.db
-    echo in data\backups\.
+    echo The server is stopped and has not been started again. Read the
+    echo error above. A copy of the database was taken first - look for the
+    echo newest labour-before-*.db in data\backups\.
     cd /d "%~dp0"
     pause
     exit /b 1
@@ -284,15 +306,15 @@ cd /d "%~dp0"
 >"%~dp0data\installed_version.txt" echo !NEWTAG!
 
 echo.
-echo ==^> Restarting the server...
-cmd /c "schtasks /end /tn ""%TASK%"" >nul 2>&1"
-timeout /t 2 /nobreak >nul
+echo ==^> Starting the server...
 schtasks /run /tn "%TASK%" >nul
 
 echo.
 echo ==^> Checking it came back up...
 set OK=
-for /l %%i in (1,1,20) do (
+:: 45 tries, not 20: startup waits up to 30 seconds for Boord's database to
+:: be readable (main.BOORD_WAIT_S) before it gives up.
+for /l %%i in (1,1,45) do (
     if not defined OK (
         timeout /t 1 /nobreak >nul
         powershell -NoProfile -Command "try { if ((Invoke-WebRequest -Uri 'http://localhost:8040/' -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { exit 0 } } catch {}; exit 1" && set OK=1
@@ -301,8 +323,8 @@ for /l %%i in (1,1,20) do (
 if defined OK (
     echo     Server is back up on port 8040, running !NEWTAG!.
 ) else (
-    echo     Server did not answer in 20s - run start_labour_server.bat in a
-    echo     window to see why. The most likely cause is that Boord's database
+    echo     Server did not answer in 45s - data\server.log says why. The
+    echo     most likely cause is that Boord's database
     echo     schema has moved past what this release reads, which the app
     echo     reports by name rather than failing later.
 )

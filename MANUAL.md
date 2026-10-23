@@ -168,6 +168,20 @@ and has the task restart the server (up to 10 times, a minute apart).
 Updating does not change the task: only re-running **install.bat** does.
 It keeps your data and PIN.
 
+**Installed before 1.0.5? Run install.bat once more.** The launcher it
+writes (`start_labour_server.bat`) now starts the server again 15 seconds
+after it stops for any reason, and writes everything the server prints to
+`data\server.log`. Look there first when Labour has been down: each start
+and each exit is stamped with the date and time, and a crash prints its
+error just before the exit line. Updating does not rewrite the launcher.
+
+At boot the server also waits up to 30 seconds for Boord's database, which
+Boord may still be updating, rather than giving up at once.
+
+The installer also reserves port 8040, so Windows (Hyper-V, WSL or Docker)
+cannot hand it to something else at boot. If Windows has already taken it,
+the installer says so and prints the three commands that free it.
+
 ## 9. Uptime
 
 The watchdog and heartbeat scripts live in the **Boord** folder and cover

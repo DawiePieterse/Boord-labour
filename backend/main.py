@@ -12,6 +12,7 @@ PIN (admin_auth.require_admin), because the door phone is on the tailnet too.
 Read MANUAL.md's Access section before changing how this is served.
 """
 import os
+import time
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -45,14 +46,45 @@ def _assert_boord_schema(conn) -> None:
             ) from e
 
 
+# How long startup waits for Boord's database to be readable before giving up.
+# At boot every app's task starts at once, and Boord migrates boord.db on its
+# own startup: while it does, the file is write-locked, and an Alembic batch
+# migration briefly has no `worker` table at all (it copies the table to a
+# temp one, drops the original and renames the copy). Labour starting in that
+# window used to refuse to boot and stay down until the watchdog noticed,
+# five or more minutes later - a morning at the door with no time clock.
+# Kept well under the watchdog's 60 second "did it come back?" allowance, and
+# the launcher (install.ps1) starts the process again if this does give up.
+BOORD_WAIT_S = 30.0
+BOORD_RETRY_S = 2.0
+
+
+def _wait_for_boord() -> None:
+    """Check Boord's database, retrying until BOORD_WAIT_S has passed.
+
+    Everything is retried, including a missing column: it cannot tell a
+    migration in flight from a real schema mismatch, and a real mismatch only
+    costs half a minute before the same clear error is raised."""
+    deadline = time.monotonic() + BOORD_WAIT_S
+    while True:
+        try:
+            if not os.path.exists(config.BOORD_DB_PATH):
+                raise RuntimeError(
+                    f"BOORD_DB_PATH not found: {config.BOORD_DB_PATH}\n"
+                    f"Install Boord first, or set BOORD_DB_PATH to its data/boord.db.")
+            with boord_engine.connect() as conn:
+                _assert_boord_schema(conn)
+            return
+        except Exception as e:  # noqa: BLE001 - re-raised once the wait is over
+            if time.monotonic() >= deadline:
+                raise
+            print(f"Waiting for Boord's database ({e}); retrying in {BOORD_RETRY_S:g}s.", flush=True)
+            time.sleep(BOORD_RETRY_S)
+
+
 @app.on_event("startup")
 def on_startup():
-    if not os.path.exists(config.BOORD_DB_PATH):
-        raise RuntimeError(
-            f"BOORD_DB_PATH not found: {config.BOORD_DB_PATH}\n"
-            f"Install Boord first, or set BOORD_DB_PATH to its data/boord.db.")
-    with boord_engine.connect() as conn:
-        _assert_boord_schema(conn)
+    _wait_for_boord()
     init_labour_db()
     start_backup_scheduler()
 
