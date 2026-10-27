@@ -150,7 +150,11 @@ can be rebuilt from Boord. Every night at 02:00 the server zips it into
 set in `Boord\data\backup_copy_to.txt`, each archive is also copied there as
 `labour_backup_*.zip`.
 
-To restore: stop the **Boord Labour Server** task, unzip `labour.db` from
+In Admin, **Settings → Data backup** lists the archives, downloads any of
+them to the phone, and **Backup now** makes one on the spot (do it before
+clearing or fixing data by hand).
+
+To restore: stop the server with `stop_server.ps1`, unzip `labour.db` from
 an archive over `data\labour.db`, and start the task again.
 
 ## 8. Updates

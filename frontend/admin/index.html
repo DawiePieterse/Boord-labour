@@ -106,6 +106,15 @@
       <ul id="rateList" class="divide-y text-sm"></ul>
     </div>
     <div class="bg-white rounded-xl shadow p-3 space-y-2">
+      <div class="font-semibold">Data backup</div>
+      <div class="text-xs text-slate-500">Backs up every scan, correction and rate. Runs by itself every night at 02:00 when something changed that day, and the last 30 are kept. <b>Backup now</b> always makes one.</div>
+      <button id="runBackup" class="boord-btn-primary rounded-lg px-3 py-1">Backup now</button>
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-500"><th>Created</th><th>Size</th><th></th></tr></thead>
+        <tbody id="backupList"></tbody>
+      </table>
+    </div>
+    <div class="bg-white rounded-xl shadow p-3 space-y-2">
       <div class="font-semibold">Admin PIN</div>
       <div class="text-xs text-slate-500">Changing it signs every other phone out of Admin.</div>
       <div class="grid grid-cols-2 gap-2 text-sm">
