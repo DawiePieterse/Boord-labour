@@ -237,6 +237,38 @@ async function renderSettings() {
       ${r.weekly_ot_after_h}h/week</li>`).join("") ||
       `<li class="py-1 text-red-700">No rate set - the pay report will refuse to calculate until one is added.</li>`;
   } catch (e) { /* 401 shows the PIN screen; offline leaves the list as it was */ }
+  await renderBackups();
+}
+
+async function renderBackups() {
+  let rows = [];
+  try { rows = await api("/api/settings/backups"); } catch (e) { return; }
+  $("backupList").innerHTML = rows.map((b) => `<tr>
+      <td class="py-1">${Boord.fmtDateTime(b.created_at)}</td>
+      <td>${(b.size_bytes / 1024).toFixed(0)} KB</td>
+      <td class="text-right"><button class="text-blue-700" data-download="${esc(b.filename)}">Download</button></td>
+    </tr>`).join("") || `<tr><td class="py-1 text-slate-500" colspan="3">No backups yet</td></tr>`;
+}
+
+async function runBackup() {
+  try {
+    await api("/api/settings/backups", { method: "POST", timeoutMs: Boord.UPLOAD_TIMEOUT_MS });
+    Boord.toast("Backup created");
+    renderBackups();
+  } catch (e) {
+    Boord.toast(`Backup failed: ${Boord.errorDetail(e)}`);
+  }
+}
+
+async function downloadBackup(ev) {
+  const name = ev.target.closest("[data-download]")?.dataset.download;
+  if (!name) return;
+  try {
+    const blob = await api(`/api/settings/backups/${encodeURIComponent(name)}/download`, { timeoutMs: Boord.UPLOAD_TIMEOUT_MS });
+    Boord.downloadBlob(blob, name);
+  } catch (e) {
+    Boord.toast(Boord.errorDetail(e));
+  }
 }
 
 async function saveRate() {
@@ -319,6 +351,8 @@ Boord.boot(async () => {
   $("repExport").addEventListener("click", exportReport);
   $("rateDate").value = Boord.localDateStr();
   $("saveRate").addEventListener("click", saveRate);
+  $("runBackup").addEventListener("click", runBackup);
+  $("backupList").addEventListener("click", downloadBackup);
   $("changePin").addEventListener("click", changePin);
   $("signOut").addEventListener("click", signOut);
   setWeek(0);

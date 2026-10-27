@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import config
@@ -105,6 +105,19 @@ def create_backup(skip_if_unchanged: bool = False) -> Optional[str]:
         os.remove(os.path.join(BACKUPS_DIR, stale))
     _copy_offsite(archive)
     return os.path.basename(archive)
+
+
+def list_backups() -> list:
+    """Newest first, for the admin Settings tab."""
+    names = sorted((f for f in os.listdir(BACKUPS_DIR) if f.startswith(PREFIX) and f.endswith(".zip")), reverse=True) \
+        if os.path.isdir(BACKUPS_DIR) else []
+    result = []
+    for name in names:
+        stat = os.stat(os.path.join(BACKUPS_DIR, name))
+        # Tagged UTC so the browser shows it in farm time, as Boord does.
+        result.append({"filename": name, "size_bytes": stat.st_size,
+                       "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
+    return result
 
 
 def _seconds_until_next_2am() -> float:

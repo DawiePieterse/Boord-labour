@@ -60,3 +60,17 @@ def test_tampered_cookie_rejected(admin_client):
     for forged in (f"{fingerprint}.{'0' * len(sig)}", "garbage", ""):
         r = admin_client.get("/api/admin/me", headers={"Cookie": f"{admin_auth.COOKIE}={forged}"})
         assert r.status_code == 401, forged
+
+
+def test_backup_now_list_and_download(admin_client):
+    made = admin_client.post("/api/settings/backups").json()["filename"]
+    assert made.startswith("labour_backup_")
+    assert made in [b["filename"] for b in admin_client.get("/api/settings/backups").json()]
+    r = admin_client.get(f"/api/settings/backups/{made}/download")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    assert admin_client.get("/api/settings/backups/last_hash.txt/download").status_code == 404
+
+
+def test_backups_need_admin(client):
+    assert client.get("/api/settings/backups").status_code == 401
+    assert client.post("/api/settings/backups").status_code == 401
