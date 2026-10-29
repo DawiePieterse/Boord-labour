@@ -113,18 +113,86 @@ function setFixBadge(n) {
   $("fixBadge").classList.toggle("hidden", !n);
 }
 
+// The day's scans as one row per shift, IN beside OUT, so a missing or
+// stray scan stands out. Pairs the way pay.py does (repeat within 60s
+// ignored, IN then OUT within 18h), over the day either side so a night
+// shift's other half is found; a row shows when either half is on the day.
+const DUPLICATE_MS = 60 * 1000;
+const MAX_SHIFT_MS = 18 * 3600 * 1000;
+
+function shiftRows(scans) {
+  const byWorker = new Map();
+  scans.forEach((s) => byWorker.set(s.worker_id, [...(byWorker.get(s.worker_id) || []), s]));
+  const rows = [];
+  for (const list of byWorker.values()) {
+    list.sort((a, b) => a.ts.localeCompare(b.ts));
+    let open = null, last = null;
+    for (const s of list) {
+      const t = Boord.parseServerDate(s.ts).getTime();
+      if (last !== null && t - last < DUPLICATE_MS) { rows.push({ repeat: s }); continue; }
+      last = t;
+      if (s.direction === "in") {
+        if (open) rows.push({ in: open });
+        open = s;
+      } else if (open && t - Boord.parseServerDate(open.ts).getTime() <= MAX_SHIFT_MS) {
+        rows.push({ in: open, out: s });
+        open = null;
+      } else {
+        if (open) rows.push({ in: open });
+        rows.push({ out: s });
+        open = null;
+      }
+    }
+    if (open) rows.push({ in: open, inside: Date.now() - Boord.parseServerDate(open.ts).getTime() <= MAX_SHIFT_MS });
+  }
+  return rows;
+}
+
+function scanCell(s, day) {
+  const d = Boord.parseServerDate(s.ts);
+  const other = Boord.localDateStr(d) !== day
+    ? ` <span class="text-slate-400 text-xs">${d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}</span>` : "";
+  return `<div class="flex items-center gap-1 whitespace-nowrap">
+      <b class="${s.direction === "in" ? "text-green-700" : "text-red-700"}">${s.direction.toUpperCase()}</b>
+      ${Boord.fmtTime(d)}${other}${s.source === "admin" ? ` <i class="fa-solid fa-hand text-slate-400 text-xs" title="Added by hand"></i>` : ""}
+      <button class="border rounded px-1.5 ml-auto" data-edit="${esc(s.uuid)}" data-ts="${esc(s.ts)}" data-dir="${s.direction}"
+        data-name="${esc(s.name)}"><i class="fa-solid fa-pen"></i></button>
+      <button class="border rounded px-1.5 text-red-700" data-del="${esc(s.uuid)}"><i class="fa-solid fa-trash"></i></button>
+    </div>`;
+}
+
+function missingCell(other, dir) {
+  return `<div class="flex items-center gap-1 text-red-700 font-semibold">no ${dir.toUpperCase()}
+      <button class="border rounded px-1.5 ml-auto font-normal" data-add="${esc(other.worker_id)}" data-dir="${dir}"
+        data-ts="${esc(other.ts)}">Add</button></div>`;
+}
+
 async function renderDayScans() {
-  let rows = [];
-  try { rows = await api(`/api/scans?day=${$("scanDay").value}`); } catch (e) { return; }
-  $("dayScanList").innerHTML = rows.map((s) => `<li class="py-2 flex justify-between items-center gap-2">
-      <span><b class="${s.direction === "in" ? "text-green-700" : "text-red-700"}">${s.direction.toUpperCase()}</b>
-        ${Boord.fmtTime(s.ts)} ${esc(s.name)}
-        <span class="text-slate-400">${esc(s.device_label)}${s.source === "admin" ? " · by hand" : ""}</span></span>
-      <span class="flex gap-1">
-        <button class="border rounded px-2" data-edit="${esc(s.uuid)}" data-ts="${esc(s.ts)}" data-dir="${s.direction}"
-          data-name="${esc(s.name)}"><i class="fa-solid fa-pen"></i></button>
-        <button class="border rounded px-2 text-red-700" data-del="${esc(s.uuid)}"><i class="fa-solid fa-trash"></i></button>
-      </span></li>`).join("") || `<li class="py-2 text-slate-500">No scans that day.</li>`;
+  const day = $("scanDay").value;
+  const shift = (n) => { const d = new Date(`${day}T12:00`); d.setDate(d.getDate() + n); return Boord.localDateStr(d); };
+  let scans = [];
+  try {
+    scans = (await Promise.all([-1, 0, 1].map((n) => api(`/api/scans?day=${shift(n)}`)))).flat();
+  } catch (e) { return; }
+  const onDay = (s) => s && Boord.localDateStr(Boord.parseServerDate(s.ts)) === day;
+  const rows = shiftRows(scans).filter((r) => onDay(r.in) || onDay(r.out) || onDay(r.repeat))
+    .sort((a, b) => {
+      const x = a.in || a.out || a.repeat, y = b.in || b.out || b.repeat;
+      return x.name.localeCompare(y.name) || x.ts.localeCompare(y.ts);
+    });
+  $("dayScanList").innerHTML = rows.map((r) => {
+    const s = r.in || r.out || r.repeat;
+    const bad = r.repeat || !r.in || (!r.out && !r.inside);
+    const hours = r.in && r.out
+      ? `${((Boord.parseServerDate(r.out.ts) - Boord.parseServerDate(r.in.ts)) / 3600000).toFixed(1)}h` : "";
+    return `<li class="py-2 ${bad ? "bg-red-50 -mx-3 px-3" : ""}">
+      <div class="flex justify-between"><span><b>${esc(s.name)}</b> <span class="text-slate-400">#${esc(s.worker_id)}</span></span>
+        <span class="text-slate-500">${r.repeat ? "repeat scan, ignored" : r.inside ? "still inside" : hours}</span></div>
+      ${r.repeat ? scanCell(r.repeat, day) : `<div class="grid grid-cols-2 gap-3 mt-1">
+        ${r.in ? scanCell(r.in, day) : missingCell(r.out, "in")}
+        ${r.out ? scanCell(r.out, day) : r.inside ? "<div></div>" : missingCell(r.in, "out")}</div>`}
+    </li>`;
+  }).join("") || `<li class="py-2 text-slate-500">No scans that day.</li>`;
 }
 
 // datetime-local wants "YYYY-MM-DDTHH:MM" in local time.
