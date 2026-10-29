@@ -13,6 +13,7 @@ const esc = (v) => Boord.escapeHtml(v);
 
 const DUPLICATE_MS = 60 * 1000;          // same badge again within this = ignored (pay.py agrees)
 const MAX_SHIFT_MS = 18 * 3600 * 1000;   // an IN older than this is a forgotten exit, not "inside" (pay.py)
+const LONG_SHIFT_MS = 12 * 3600 * 1000;  // an OUT this long after the IN may be tomorrow's arrival (admin.js)
 const SYNC_EVERY_MS = 10 * 1000;
 const RESULT_SHOW_MS = 5000;
 
@@ -165,6 +166,7 @@ async function onDecoded(text) {
     showResult({ bad: true, name: `Badge "${id}" is not an active Boord worker` });
     return;
   }
+  const inAt = inside.get(id);  // their IN, when this scan is about to be an OUT
   const scan = {
     uuid: Boord.uuid(), worker_id: id, timestamp: new Date(now).toISOString(),
     direction: inside.has(id) ? "out" : "in", device_label: deviceLabel(), synced: 0,
@@ -172,12 +174,12 @@ async function onDecoded(text) {
   await IDB.put(scan);
   await rebuildInside();
   Boord.beepScanned();
-  showResult({ scan, worker });
+  showResult({ scan, worker, inAt });
   renderScanPanel();
   syncNow();
 }
 
-function showResult({ scan, worker, bad, name }) {
+function showResult({ scan, worker, bad, name, inAt }) {
   clearTimeout(resultTimer);
   const el = $("result");
   const isIn = scan && scan.direction === "in";
@@ -185,6 +187,15 @@ function showResult({ scan, worker, bad, name }) {
   $("resultDir").textContent = bad ? "?" : isIn ? "IN" : "OUT";
   $("resultName").textContent = bad ? name : worker.name;
   $("resultTime").textContent = scan ? Boord.fmtTime(scan.timestamp) : "";
+  // An OUT long after the IN is usually someone who forgot to scan out last
+  // time and is arriving now. Say so while the operator can still flip it.
+  const longAgo = scan && !isIn && inAt && Date.parse(scan.timestamp) - inAt > LONG_SHIFT_MS;
+  $("resultHint").classList.toggle("hidden", !longAgo);
+  if (longAgo) {
+    const h = Math.floor((Date.parse(scan.timestamp) - inAt) / 3600000);
+    $("resultHint").textContent = `Their IN was ${h}h ago (${Boord.fmtTime(new Date(inAt).toISOString())}). ` +
+      "Forgot to scan out? If they are arriving now, tap Make it IN.";
+  }
   const photo = $("resultPhoto");
   photo.classList.toggle("hidden", !(worker && worker.photo));
   if (worker && worker.photo) photo.src = worker.photo;
@@ -197,13 +208,14 @@ function showResult({ scan, worker, bad, name }) {
       scan.synced = 0;  // re-sent; the server takes the new direction for this uuid
       await IDB.put(scan);
       await rebuildInside();
-      showResult({ scan, worker });
+      showResult({ scan, worker, inAt });
       renderScanPanel();
       syncNow();
     };
   }
   el.classList.remove("hidden");
-  resultTimer = setTimeout(hideResult, RESULT_SHOW_MS);
+  // Long enough to read the warning before it goes.
+  resultTimer = setTimeout(hideResult, $("resultHint").classList.contains("hidden") ? RESULT_SHOW_MS : 3 * RESULT_SHOW_MS);
 }
 
 function hideResult() { $("result").classList.add("hidden"); }
