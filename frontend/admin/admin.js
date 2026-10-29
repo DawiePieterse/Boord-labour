@@ -6,6 +6,11 @@
 const $ = (id) => document.getElementById(id);
 const esc = (v) => Boord.escapeHtml(v);
 
+// Inside longer than this is probably a forgotten exit: shown red and listed
+// under Fix. A warning only - pay still pairs up to MAX_SHIFT (18h, pay.py),
+// so a real night or overtime shift is paid once they scan out.
+const LONG_SHIFT_MS = 12 * 3600 * 1000;
+
 let workers = [];
 let currentTab = "today";
 
@@ -35,7 +40,8 @@ async function showAdmin() {
   ["adminMain", "adminNav"].forEach((id) => $(id).classList.remove("hidden"));
   try { workers = await api("/api/workers"); } catch (_) { /* shown when needed */ }
   showTab(currentTab);
-  api("/api/exceptions").then((l) => setFixBadge(l.length)).catch(() => {});
+  Promise.all([api("/api/exceptions"), api("/api/presence")])
+    .then(([l, p]) => setFixBadge(l.length + longInside(p).length)).catch(() => {});
 }
 
 async function signIn(ev) {
@@ -52,6 +58,10 @@ async function signIn(ev) {
 // --------------------------------------------------------------------------
 // Today
 // --------------------------------------------------------------------------
+function longInside(presence) {
+  return presence.filter((p) => Date.now() - Boord.parseServerDate(p.in_ts).getTime() > LONG_SHIFT_MS);
+}
+
 function hoursSince(ms) {
   const mins = Math.floor((Date.now() - ms) / 60000);
   return `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, "0")}`;
@@ -62,9 +72,10 @@ async function renderToday() {
   try { rows = await api("/api/presence"); } catch (_) { return; }
   $("presenceList").innerHTML = rows.map((p) => {
     const t = Boord.parseServerDate(p.in_ts);
-    return `<li class="py-2 flex justify-between"><span>${esc(p.name)}
-      <span class="text-slate-400">#${esc(p.worker_id)}</span></span>
-      <span class="text-slate-600">in ${Boord.fmtTime(t)} · ${hoursSince(t.getTime())}</span></li>`;
+    const long = Date.now() - t.getTime() > LONG_SHIFT_MS;
+    return `<li class="py-2 flex justify-between ${long ? "text-red-700 font-semibold" : ""}"><span>${esc(p.name)}
+      <span class="${long ? "" : "text-slate-400"}">#${esc(p.worker_id)}</span></span>
+      <span class="${long ? "" : "text-slate-600"}">in ${Boord.fmtTime(t)} · ${hoursSince(t.getTime())}${long ? " · scanned out?" : ""}</span></li>`;
   }).join("") || `<li class="py-2 text-slate-500">Nobody is scanned in.</li>`;
 }
 
@@ -72,9 +83,16 @@ async function renderToday() {
 // Fix: exceptions and hand corrections
 // --------------------------------------------------------------------------
 async function renderFix() {
-  let list = [];
-  try { list = await api("/api/exceptions"); } catch (e) { return; }
-  setFixBadge(list.length);
+  let list = [], presence = [];
+  try { [list, presence] = await Promise.all([api("/api/exceptions"), api("/api/presence")]); } catch (e) { return; }
+  const long = longInside(presence);
+  setFixBadge(list.length + long.length);
+  $("longList").innerHTML = long.map((p) => `<li class="py-2">
+      <div><b>${esc(p.name)}</b> <span class="text-slate-400">#${esc(p.worker_id)}</span></div>
+      <div class="text-red-700">Scanned IN ${Boord.fmtDateTime(p.in_ts)} - inside ${hoursSince(Boord.parseServerDate(p.in_ts).getTime())}</div>
+      <div class="mt-1"><button class="border rounded-lg px-2 py-1" data-add="${esc(p.worker_id)}" data-dir="out"
+        data-ts="${esc(p.in_ts)}">Add exit time</button></div></li>`).join("") ||
+    `<li class="py-2 text-slate-500">Nobody.</li>`;
   $("exceptionList").innerHTML = list.map((e) => {
     const missingExit = e.kind === "missing_exit";
     return `<li class="py-2">
@@ -323,6 +341,7 @@ Boord.boot(async () => {
   $("pinForm").addEventListener("submit", signIn);
   document.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.nav)));
   $("exceptionList").addEventListener("click", onFixClick);
+  $("longList").addEventListener("click", onFixClick);
   $("dayScanList").addEventListener("click", onFixClick);
   $("scanDay").value = Boord.localDateStr();
   $("scanDay").addEventListener("change", renderDayScans);
