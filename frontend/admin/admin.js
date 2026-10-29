@@ -82,16 +82,22 @@ async function renderToday() {
 // --------------------------------------------------------------------------
 // Fix: exceptions and hand corrections
 // --------------------------------------------------------------------------
+// What each Fix button opens the scan form on: the worker, the shift's IN
+// and/or OUT as far as known, and whether a scan is being added or changed.
+let fixCtx = [];
+function ctxAttr(ctx) { fixCtx.push(ctx); return `data-ctx="${fixCtx.length - 1}"`; }
+
 async function renderFix() {
   let list = [], presence = [];
   try { [list, presence] = await Promise.all([api("/api/exceptions"), api("/api/presence")]); } catch (e) { return; }
+  fixCtx = [];
   const long = longInside(presence);
   setFixBadge(list.length + long.length);
   $("longList").innerHTML = long.map((p) => `<li class="py-2">
       <div><b>${esc(p.name)}</b> <span class="text-slate-400">#${esc(p.worker_id)}</span></div>
       <div class="text-red-700">Scanned IN ${Boord.fmtDateTime(p.in_ts)} - inside ${hoursSince(Boord.parseServerDate(p.in_ts).getTime())}</div>
-      <div class="mt-1"><button class="border rounded-lg px-2 py-1" data-add="${esc(p.worker_id)}" data-dir="out"
-        data-ts="${esc(p.in_ts)}">Add exit time</button></div></li>`).join("") ||
+      <div class="mt-1"><button class="border rounded-lg px-2 py-1" ${ctxAttr({ name: p.name, worker_id: p.worker_id,
+        in: { ts: p.in_ts, uuid: p.uuid }, add: "out" })}>Add exit time</button></div></li>`).join("") ||
     `<li class="py-2 text-slate-500">Nobody.</li>`;
   $("exceptionList").innerHTML = list.map((e) => {
     const missingExit = e.kind === "missing_exit";
@@ -100,8 +106,8 @@ async function renderFix() {
       <div class="text-slate-600">${missingExit ? "Scanned IN" : "Scanned OUT"} ${Boord.fmtDateTime(e.ts)} -
         no ${missingExit ? "exit" : "entry"} scan</div>
       <div class="flex gap-2 mt-1">
-        <button class="border rounded-lg px-2 py-1" data-add="${esc(e.worker_id)}" data-dir="${missingExit ? "out" : "in"}"
-          data-ts="${esc(e.ts)}">Add ${missingExit ? "exit" : "entry"} time</button>
+        <button class="border rounded-lg px-2 py-1" ${ctxAttr({ name: e.name, worker_id: e.worker_id,
+          [missingExit ? "in" : "out"]: { ts: e.ts, uuid: e.uuid }, add: missingExit ? "out" : "in" })}>Add ${missingExit ? "exit" : "entry"} time</button>
         <button class="border rounded-lg px-2 py-1 text-red-700" data-del="${esc(e.uuid)}">Delete this scan</button>
       </div></li>`;
   }).join("") || `<li class="py-2 text-slate-500">Nothing to fix.</li>`;
@@ -148,23 +154,24 @@ function shiftRows(scans) {
   return rows;
 }
 
-function scanCell(s, day) {
+function scanCell(s, day, row) {
   const d = Boord.parseServerDate(s.ts);
   const other = Boord.localDateStr(d) !== day
     ? ` <span class="text-slate-400 text-xs">${d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}</span>` : "";
   return `<div class="flex items-center gap-1 whitespace-nowrap">
       <b class="${s.direction === "in" ? "text-green-700" : "text-red-700"}">${s.direction.toUpperCase()}</b>
       ${Boord.fmtTime(d)}${other}${s.source === "admin" ? ` <i class="fa-solid fa-hand text-slate-400 text-xs" title="Added by hand"></i>` : ""}
-      <button class="border rounded px-1.5 ml-auto" data-edit="${esc(s.uuid)}" data-ts="${esc(s.ts)}" data-dir="${s.direction}"
-        data-name="${esc(s.name)}"><i class="fa-solid fa-pen"></i></button>
+      <button class="border rounded px-1.5 ml-auto" ${ctxAttr({ name: s.name, worker_id: s.worker_id, in: row.in,
+        out: row.out, repeat: row.repeat, inside: row.inside, edit: s })}><i class="fa-solid fa-pen"></i></button>
       <button class="border rounded px-1.5 text-red-700" data-del="${esc(s.uuid)}"><i class="fa-solid fa-trash"></i></button>
     </div>`;
 }
 
-function missingCell(other, dir) {
+function missingCell(row, dir) {
+  const other = row.in || row.out;
   return `<div class="flex items-center gap-1 text-red-700 font-semibold">no ${dir.toUpperCase()}
-      <button class="border rounded px-1.5 ml-auto font-normal" data-add="${esc(other.worker_id)}" data-dir="${dir}"
-        data-ts="${esc(other.ts)}">Add</button></div>`;
+      <button class="border rounded px-1.5 ml-auto font-normal" ${ctxAttr({ name: other.name, worker_id: other.worker_id,
+        in: row.in, out: row.out, add: dir })}>Add</button></div>`;
 }
 
 async function renderDayScans() {
@@ -188,9 +195,9 @@ async function renderDayScans() {
     return `<li class="py-2 ${bad ? "bg-red-50 -mx-3 px-3" : ""}">
       <div class="flex justify-between"><span><b>${esc(s.name)}</b> <span class="text-slate-400">#${esc(s.worker_id)}</span></span>
         <span class="text-slate-500">${r.repeat ? "repeat scan, ignored" : r.inside ? "still inside" : hours}</span></div>
-      ${r.repeat ? scanCell(r.repeat, day) : `<div class="grid grid-cols-2 gap-3 mt-1">
-        ${r.in ? scanCell(r.in, day) : missingCell(r.out, "in")}
-        ${r.out ? scanCell(r.out, day) : r.inside ? "<div></div>" : missingCell(r.in, "out")}</div>`}
+      ${r.repeat ? scanCell(r.repeat, day, r) : `<div class="grid grid-cols-2 gap-3 mt-1">
+        ${r.in ? scanCell(r.in, day, r) : missingCell(r, "in")}
+        ${r.out ? scanCell(r.out, day, r) : r.inside ? "<div></div>" : missingCell(r, "out")}</div>`}
     </li>`;
   }).join("") || `<li class="py-2 text-slate-500">No scans that day.</li>`;
 }
@@ -201,19 +208,108 @@ function toLocalInput(date) {
   return d.toISOString().slice(0, 16);
 }
 
-let scanFormSubmit = null;
-function openScanForm({ title, workerId, ts, direction, onSubmit }) {
-  $("scanFormTitle").textContent = title;
-  const sel = $("scanFormWorker");
-  $("scanFormWorkerWrap").classList.toggle("hidden", workerId !== undefined);
-  sel.innerHTML = workers.map((w) => `<option value="${esc(w.id)}">${esc(w.id)} - ${esc(w.name)}</option>`).join("");
-  if (workerId) sel.value = workerId;
-  $("scanFormTime").value = toLocalInput(ts || new Date());
-  $("scanFormDir").value = direction || "in";
+// The scan form says where the person stands now, what to enter, and what
+// the shift will look like once saved - so a wrong time or direction shows
+// before it is saved, not on the pay report.
+const HOUR = 3600 * 1000;
+let scanCtx = null;
+
+const when = (ms) => new Date(ms).toLocaleString("en-ZA",
+  { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const hrs = (ms) => `${(ms / HOUR).toFixed(1)}h`;
+const tsMs = (scan) => scan && Boord.parseServerDate(scan.ts).getTime();
+
+const BOX = {
+  red: "bg-red-50 text-red-800", amber: "bg-amber-50 text-amber-900",
+  green: "bg-green-50 text-green-800", grey: "bg-slate-50 text-slate-700",
+};
+function setBox(id, colour, html) {
+  $(id).className = `rounded-lg p-2 text-sm ${BOX[colour]}`;
+  $(id).innerHTML = html;
+}
+
+function statusNow(c) {
+  const i = tsMs(c.in), o = tsMs(c.out);
+  if (c.repeat) return ["amber", `<b>Repeat scan</b> within a minute of the one before. It is ignored for pay.`];
+  if (i && o) return ["green", `<b>Shift complete:</b> IN ${when(i)} → OUT ${when(o)} (${hrs(o - i)}).`];
+  if (i && Date.now() - i <= MAX_SHIFT_MS) {
+    return ["amber", `<b>Still inside</b> since ${when(i)} - ${hrs(Date.now() - i)}, no OUT yet.` +
+      (Date.now() - i > LONG_SHIFT_MS ? " Probably forgot to scan out." : "")];
+  }
+  if (i) return ["red", `<b>Scanned IN ${when(i)} and never scanned OUT.</b> Not paid until an OUT is added.`];
+  return ["red", `<b>Scanned OUT ${when(o)} with no IN.</b> Not paid until an IN is added.`];
+}
+
+function taskFor(c) {
+  if (!c) return "Pick the worker and enter the scan.";
+  if (c.repeat) return "Usually this should be <b>deleted</b> (red bin), not changed.";
+  if (c.add === "out") return "Enter the time they <b>left</b>.";
+  if (c.add === "in") return "Enter the time they <b>arrived</b>.";
+  if (c.edit.direction === "in" && !c.out) {
+    return `Correct the <b>arrival (IN)</b> time here. <button type="button" id="scanFormToOut"
+      class="border rounded-lg px-2 py-0.5 mt-1 boord-btn-primary">They left? Add the exit time instead</button>`;
+  }
+  return c.edit.direction === "in" ? "Correct the <b>arrival (IN)</b> time." :
+    "Correct the <b>leaving (OUT)</b> time. If it was a stray scan, delete it instead (red bin).";
+}
+
+// The other half of the shift, which the scan being entered pairs with.
+function partner(c) {
+  if (!c || c.repeat) return null;
+  if (c.edit) return c.edit.direction === "in" ? c.out && { dir: "out", t: tsMs(c.out) } : c.in && { dir: "in", t: tsMs(c.in) };
+  return c.add === "out" ? c.in && { dir: "in", t: tsMs(c.in) } : c.out && { dir: "out", t: tsMs(c.out) };
+}
+
+function renderPreview() {
+  const t = new Date($("scanFormTime").value).getTime(), dir = $("scanFormDir").value;
+  const other = partner(scanCtx);
+  $("scanFormTimeLabel").textContent = dir === "in" ? "Arrived at" : "Left at";
+  if (Number.isNaN(t)) return setBox("scanFormPreview", "grey", "Enter a time.");
+  if (t > Date.now() + 5 * 60000) return setBox("scanFormPreview", "red", "That time is in the future.");
+  if (!other) {
+    return setBox("scanFormPreview", "grey", `Saves a single ${dir.toUpperCase()} at ${when(t)}.` +
+      ` It is paid once it pairs with ${dir === "in" ? "an OUT" : "an IN"}.`);
+  }
+  if (other.dir === dir) {
+    return setBox("scanFormPreview", "red", `Both scans would be ${dir.toUpperCase()}, so they do not make a shift and nothing is paid.`);
+  }
+  const [i, o] = dir === "in" ? [t, other.t] : [other.t, t];
+  if (o <= i) return setBox("scanFormPreview", "red", `The OUT (${when(o)}) is before the IN (${when(i)}). Check the date and time.`);
+  if (o - i > MAX_SHIFT_MS) return setBox("scanFormPreview", "red", `${hrs(o - i)} is longer than 18 hours, so it does not count as a shift and is not paid. Check the date.`);
+  setBox("scanFormPreview", o - i > LONG_SHIFT_MS ? "amber" : "green",
+    `<b>After saving:</b> IN ${when(i)} → OUT ${when(o)} = <b>${hrs(o - i)}</b>${o - i > LONG_SHIFT_MS ? " - a long shift, check the time is right." : ", paid."}`);
+}
+
+function openScanForm(c) {
+  scanCtx = c;
+  $("scanFormTitle").innerHTML = c ? `${esc(c.name)} <span class="text-slate-400 font-normal">#${esc(c.worker_id)}</span>` : "Add a scan by hand";
+  $("scanFormWorkerWrap").classList.toggle("hidden", !!c);
+  $("scanFormWorker").innerHTML = workers.map((w) => `<option value="${esc(w.id)}">${esc(w.id)} - ${esc(w.name)}</option>`).join("");
+  $("scanFormStatus").classList.toggle("hidden", !c);
+  if (c) setBox("scanFormStatus", ...statusNow(c));
+  $("scanFormTask").innerHTML = taskFor(c);
+  $("scanFormToOut")?.addEventListener("click", () => openScanForm({ ...c, edit: null, add: "out" }));
+  let ts = Date.now(), dir = "in";
+  if (c && c.edit) { ts = tsMs(c.edit); dir = c.edit.direction; }
+  else if (c && c.add === "out") { ts = Math.min(Date.now(), tsMs(c.in) + 9 * HOUR); dir = "out"; }
+  else if (c && c.add === "in") { ts = tsMs(c.out) - 9 * HOUR; }
+  $("scanFormTime").value = toLocalInput(new Date(ts));
+  $("scanFormDir").value = dir;
+  $("scanFormDirHint").classList.toggle("hidden", !c);
   $("scanFormReason").value = "";
-  scanFormSubmit = onSubmit;
+  $("scanFormReason").placeholder = c && c.add === "out" ? "e.g. Forgot to scan out, left 16:00 per supervisor"
+    : c && c.add === "in" ? "e.g. Forgot to scan in, started 06:00 per supervisor" : "e.g. Wrong time on the door phone";
+  $("scanFormSave").textContent = c && c.add === "out" ? "Save exit time" : c && c.add === "in" ? "Save arrival time"
+    : c ? "Save change" : "Save";
+  renderPreview();
   $("scanForm").classList.remove("hidden");
   $("scanForm").classList.add("flex");
+}
+
+function submitScanForm(f) {
+  const c = scanCtx;
+  if (c && c.edit) return api(`/api/scans/${c.edit.uuid}`, { method: "PATCH", body: f });
+  return api("/api/scans", { method: "POST", body: { worker_id: c ? c.worker_id : $("scanFormWorker").value, ...f } });
 }
 
 function closeScanForm() {
@@ -225,18 +321,8 @@ async function onFixClick(ev) {
   const btn = ev.target.closest("button");
   if (!btn) return;
   try {
-    if (btn.dataset.add) {
-      openScanForm({
-        title: "Add the missing scan", workerId: btn.dataset.add,
-        ts: Boord.parseServerDate(btn.dataset.ts), direction: btn.dataset.dir,
-        onSubmit: (f) => api("/api/scans", { method: "POST", body: { worker_id: btn.dataset.add, ...f } }),
-      });
-    } else if (btn.dataset.edit) {
-      openScanForm({
-        title: `Change scan - ${btn.dataset.name}`, workerId: null,
-        ts: Boord.parseServerDate(btn.dataset.ts), direction: btn.dataset.dir,
-        onSubmit: (f) => api(`/api/scans/${btn.dataset.edit}`, { method: "PATCH", body: f }),
-      });
+    if (btn.dataset.ctx) {
+      openScanForm(fixCtx[btn.dataset.ctx]);
     } else if (btn.dataset.del) {
       const reason = prompt("Delete this scan. Why? (kept on record)");
       if (!reason || !reason.trim()) return;
@@ -413,15 +499,13 @@ Boord.boot(async () => {
   $("dayScanList").addEventListener("click", onFixClick);
   $("scanDay").value = Boord.localDateStr();
   $("scanDay").addEventListener("change", renderDayScans);
-  $("addScanBtn").addEventListener("click", () => openScanForm({
-    title: "Add a scan by hand", ts: new Date(),
-    onSubmit: (f) => api("/api/scans", { method: "POST", body: { worker_id: $("scanFormWorker").value, ...f } }),
-  }));
+  $("addScanBtn").addEventListener("click", () => openScanForm(null));
+  ["scanFormTime", "scanFormDir"].forEach((id) => $(id).addEventListener("input", renderPreview));
   $("scanFormCancel").addEventListener("click", closeScanForm);
   $("scanFormEl").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     try {
-      await scanFormSubmit({
+      await submitScanForm({
         timestamp: new Date($("scanFormTime").value).toISOString(),
         direction: $("scanFormDir").value, reason: $("scanFormReason").value, device_label: deviceLabel(),
       });

@@ -136,21 +136,26 @@
 
 <!-- Add / change a scan by hand -->
 <div id="scanForm" class="hidden fixed inset-0 z-50 bg-black/60 items-center justify-center p-4">
-  <form class="bg-white rounded-xl p-4 w-full max-w-sm space-y-3" id="scanFormEl">
-    <div class="font-bold" id="scanFormTitle"></div>
+  <form class="bg-white rounded-xl p-4 w-full max-w-sm space-y-3 max-h-full overflow-y-auto" id="scanFormEl">
+    <div class="font-bold text-lg" id="scanFormTitle"></div>
+    <div id="scanFormStatus"></div>
+    <div class="text-sm" id="scanFormTask"></div>
     <label class="block text-sm" id="scanFormWorkerWrap">Worker
       <select id="scanFormWorker" class="w-full border rounded-lg px-2 py-1"></select>
     </label>
-    <label class="block text-sm">Time<input type="datetime-local" id="scanFormTime" required class="w-full border rounded-lg px-2 py-1"></label>
-    <label class="block text-sm">Direction
+    <label class="block text-sm"><span id="scanFormTimeLabel">Time</span>
+      <input type="datetime-local" id="scanFormTime" required class="w-full border rounded-lg px-2 py-1"></label>
+    <label class="block text-sm">Recorded as
       <select id="scanFormDir" class="w-full border rounded-lg px-2 py-1">
         <option value="in">IN (arrived)</option><option value="out">OUT (left)</option>
       </select>
+      <span id="scanFormDirHint" class="text-xs text-slate-500">Only change this if the door phone recorded it the wrong way round.</span>
     </label>
+    <div id="scanFormPreview"></div>
     <label class="block text-sm">Why (kept on record)<input id="scanFormReason" required class="w-full border rounded-lg px-2 py-1"></label>
     <div class="flex gap-2">
       <button type="button" id="scanFormCancel" class="flex-1 border rounded-lg py-2">Cancel</button>
-      <button type="submit" class="flex-1 boord-btn-primary rounded-lg py-2 font-semibold">Save</button>
+      <button type="submit" id="scanFormSave" class="flex-1 boord-btn-primary rounded-lg py-2 font-semibold">Save</button>
     </div>
   </form>
 </div>
