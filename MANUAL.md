@@ -93,6 +93,16 @@ nothing, so a double tap at the door can't turn an IN into an OUT.
 they were scanned and are sent when the connection returns. The header says
 "offline - scans saved", and *Waiting to sync* counts them.
 
+Under the button, **Scans in the last 24 hours** shows every door phone's
+scans, not only this one's. At the top is one line per phone: its name,
+how many INs and OUTs it scanned, and when it last scanned. A phone that
+went quiet while the others kept going is the one to check. Below that are
+the scans themselves, newest first, each with the phone that made it (this
+phone's in blue); **Show all** lists the whole day. A clock means the scan
+is still waiting to sync; scans entered under **Fix** show as *Admin*.
+Give each phone its own name (tap it in the header) so the list can tell
+them apart.
+
 The **Inside** tab lists who is in the building now, with the time they
 came in. It shows no hours or pay.
 

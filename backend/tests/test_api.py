@@ -54,6 +54,24 @@ def test_presence_shows_who_is_in_now(client):
     assert [p["worker_id"] for p in client.get("/api/presence").json()] == ["001"]
 
 
+def test_recent_lists_every_phone_for_24h_newest_first(admin_client):
+    client = admin_client
+    now = datetime.now(timezone.utc)
+    sync(client, ("old", "001", now - timedelta(hours=25), "in"),
+         ("a", "001", now - timedelta(hours=3), "in"))
+    client.post("/api/scans/sync", json={"scans": [
+        {"uuid": "b", "worker_id": "002", "timestamp": (now - timedelta(hours=1)).isoformat(),
+         "direction": "in", "device_label": "door-2"},
+        {"uuid": "gone", "worker_id": "002", "timestamp": (now - timedelta(hours=2)).isoformat(),
+         "direction": "in", "device_label": "door-2"}]})
+    assert client.post("/api/scans/gone/delete", json={"reason": "double scan"}).status_code == 200
+    client.post("/api/admin/logout")  # the door phone has no cookie
+    rows = client.get("/api/scans/recent").json()
+    assert [(r["uuid"], r["device_label"], r["name"]) for r in rows] == [
+        ("b", "door-2", "Piet K"), ("a", "door-1", "Thandi M")]
+    assert rows[0]["ts"].endswith("Z") and rows[0]["source"] == "scan"
+
+
 def test_exception_fixed_by_admin_scan_with_audit(admin_client):
     client = admin_client
     client.post("/api/settings/rates", json={"effective_date": "2026-01-01", "hourly_rate": 30})

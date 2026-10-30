@@ -10,6 +10,7 @@ ADMIN_GETS = ["/api/exceptions", "/api/scans", "/api/edits", "/api/settings/rate
 def test_door_endpoints_open_admin_endpoints_closed(client):
     assert client.get("/api/workers").status_code == 200
     assert client.get("/api/presence").status_code == 200
+    assert client.get("/api/scans/recent").status_code == 200
     assert client.post("/api/scans/sync", json={"scans": []}).status_code == 200
     for path in ADMIN_GETS:
         assert client.get(path).status_code == 401, path
