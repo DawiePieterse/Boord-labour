@@ -16,9 +16,13 @@ const MAX_SHIFT_MS = 18 * 3600 * 1000;   // an IN older than this is a forgotten
 const LONG_SHIFT_MS = 12 * 3600 * 1000;  // an OUT this long after the IN may be tomorrow's arrival (admin.js)
 const SYNC_EVERY_MS = 10 * 1000;
 const RESULT_SHOW_MS = 5000;
+const RECENT_MS = 24 * 3600 * 1000;      // the recent list's window (scans.py RECENT_HOURS agrees)
+const RECENT_SHOWN = 10;                 // rows before "Show all", so the Scan button stays near the top
 
 let workers = new Map();     // id -> {id, name, photo}
 let serverPresence = [];     // [{worker_id, in_ts}] as last fetched
+let serverRecent = [];       // every phone's scans, last 24h, from /api/scans/recent as last fetched
+let recentAll = false;       // "Show all" pressed on the recent list
 let inside = new Map();      // worker_id -> in time (ms): server presence + local unsynced scans
 const lastScanAt = new Map(); // worker_id -> ms, for the duplicate window
 let scanner = null;
@@ -79,6 +83,8 @@ async function syncNow() {
     }
     serverPresence = await Boord.api("/api/presence");
     localStorage.setItem("labour_presence", JSON.stringify(serverPresence));
+    serverRecent = await Boord.api("/api/scans/recent");
+    localStorage.setItem("labour_recent", JSON.stringify(serverRecent));
     setSyncStatus(true);
   } catch (e) {
     setSyncStatus(false);
@@ -220,19 +226,96 @@ function showResult({ scan, worker, bad, name, inAt }) {
 
 function hideResult() { $("result").classList.add("hidden"); }
 
+// The last 24 hours from every phone, not just this one. A second door
+// phone used to say "Nothing scanned yet" while Door 1 had scanned half the
+// packhouse in, which left whoever held it wondering if it was working.
+// The server's list is every phone's synced scans; this phone's own unsent
+// or refused ones are laid over it by uuid, so a scan shows the moment it is
+// made (and offline), and a flip not yet sent shows its new direction.
+// A synced scan the server no longer lists was deleted under Fix, or is
+// older than the window, so it is left out.
 async function renderScanPanel() {
-  const all = await IDB.all();
-  $("pendingCount").textContent = all.filter((s) => !s.synced).length;
-  const recent = all.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 8);
-  $("recentList").innerHTML = recent.map((s) => {
-    const w = workers.get(s.worker_id);
-    const status = s.error ? `<span class="text-red-600">${esc(s.error)}</span>`
-      : s.synced ? `<i class="fa-solid fa-check text-green-600"></i>` : `<i class="fa-solid fa-clock text-amber-500"></i>`;
+  const local = await IDB.all();
+  $("pendingCount").textContent = local.filter((s) => !s.synced).length;
+
+  const mine = new Set(local.map((s) => s.uuid));
+  const rows = new Map(serverRecent.map((r) => [r.uuid, {
+    ...r, at: Boord.parseServerDate(r.ts).getTime(), mine: mine.has(r.uuid), pending: false, error: "",
+  }]));
+  for (const s of local) {
+    if (s.synced && !s.error) continue;
+    rows.set(s.uuid, {
+      uuid: s.uuid, worker_id: s.worker_id, direction: s.direction, device_label: s.device_label,
+      source: "scan", at: Date.parse(s.timestamp), mine: true, pending: !s.synced, error: s.error || "",
+    });
+  }
+  const since = Date.now() - RECENT_MS;
+  const recent = [...rows.values()].filter((r) => r.at >= since).sort((a, b) => b.at - a.at);
+
+  renderDevices(recent);
+  const shown = recentAll ? recent : recent.slice(0, RECENT_SHOWN);
+  $("recentList").innerHTML = shown.map((r) => {
+    const w = workers.get(r.worker_id);
+    const status = r.error ? `<span class="text-red-600">${esc(r.error)}</span>`
+      : r.pending ? `<i class="fa-solid fa-clock text-amber-500"></i>`
+      : r.mine ? `<i class="fa-solid fa-check text-green-600"></i>` : "";
     return `<li class="py-1 flex justify-between gap-2">
-      <span><b class="${s.direction === "in" ? "text-green-700" : "text-red-700"}">${s.direction.toUpperCase()}</b>
-      ${esc(w ? w.name : s.worker_id)}</span>
-      <span class="text-slate-500">${Boord.fmtTime(s.timestamp)} ${status}</span></li>`;
-  }).join("") || `<li class="py-1 text-slate-500">Nothing scanned yet.</li>`;
+      <span><b class="${r.direction === "in" ? "text-green-700" : "text-red-700"}">${r.direction.toUpperCase()}</b>
+      ${esc(w ? w.name : r.name || r.worker_id)}</span>
+      <span class="text-slate-500 whitespace-nowrap">
+        <span class="text-xs px-1.5 py-0.5 rounded ${r.mine ? "bg-blue-100 text-blue-800" : "bg-slate-100"}">${esc(deviceName(r))}</span>
+        ${dayTime(r.at)} ${status}</span></li>`;
+  }).join("") || `<li class="py-1 text-slate-500">Nothing scanned in the last 24 hours.</li>`;
+
+  const more = $("recentMore");
+  more.classList.toggle("hidden", recent.length <= RECENT_SHOWN);
+  more.textContent = recentAll ? "Show fewer" : `Show all ${recent.length}`;
+}
+
+// What a scan's phone is called on the list. An admin entry under Fix
+// carries the admin phone's name, if any; a door phone never renamed is
+// "Phone", which is the hint to tap the name in the header.
+function deviceName(r) {
+  if (r.source === "admin") return r.device_label ? `Admin (${r.device_label})` : "Admin";
+  return r.device_label || "Unnamed phone";
+}
+
+// The window crosses midnight, so last night's scans say so.
+function dayTime(ms) {
+  const d = new Date(ms);
+  const t = Boord.fmtTime(d);
+  return d.toDateString() === new Date().toDateString() ? t : `yesterday ${t}`;
+}
+
+function ago(ms) {
+  const mins = Math.max(0, Math.floor((Date.now() - ms) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  return `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, "0")} ago`;
+}
+
+// One line per phone: how many scans it made in the window and when it last
+// scanned. A phone that went quiet an hour ago while the others kept going is
+// the one to check (battery, Tailscale, or someone forgot it on a shelf).
+function renderDevices(recent) {
+  const devices = new Map();
+  for (const r of recent) {
+    const name = deviceName(r);
+    const d = devices.get(name) || { name, ins: 0, outs: 0, last: 0, mine: false, pending: 0 };
+    if (r.direction === "in") d.ins += 1; else d.outs += 1;
+    d.last = Math.max(d.last, r.at);
+    d.mine = d.mine || r.mine;
+    if (r.pending) d.pending += 1;
+    devices.set(name, d);
+  }
+  const list = [...devices.values()].sort((a, b) => b.last - a.last);
+  $("deviceList").classList.toggle("hidden", !list.length);
+  $("deviceList").innerHTML = list.map((d) => `<li class="py-1.5 flex justify-between gap-2">
+      <span><i class="fa-solid fa-mobile-screen text-slate-400"></i> <b>${esc(d.name)}</b>
+        ${d.mine ? `<span class="text-xs text-blue-700">this phone</span>` : ""}
+        <span class="block text-xs text-slate-500">${d.ins} in · ${d.outs} out${d.pending ? ` · ${d.pending} waiting to sync` : ""}</span></span>
+      <span class="text-right text-slate-600 whitespace-nowrap">last ${dayTime(d.last)}
+        <span class="block text-xs text-slate-500">${ago(d.last)}</span></span></li>`).join("");
 }
 
 // --------------------------------------------------------------------------
@@ -286,8 +369,10 @@ Boord.boot(async () => {
   $("stopBtn").addEventListener("click", stopCamera);
   $("resultClose").addEventListener("click", hideResult);
   $("deviceLabel").addEventListener("click", renamePhone);
+  $("recentMore").addEventListener("click", () => { recentAll = !recentAll; renderScanPanel(); });
 
   serverPresence = cachedJSON("labour_presence", []);
+  serverRecent = cachedJSON("labour_recent", []);
   await loadWorkers();
   await rebuildInside();
   await renderScanPanel();

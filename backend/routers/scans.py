@@ -16,8 +16,8 @@ from timeutil import day_bounds
 
 router = APIRouter(prefix="/api", tags=["scans"])
 
-# Everything below the door section is admin-only. sync and presence stay
-# open: they are what the door phone runs on.
+# Everything below the door section is admin-only. sync, presence and
+# scans/recent stay open: they are what the door phone runs on.
 ADMIN = [Depends(require_admin)]
 
 
@@ -92,6 +92,32 @@ def presence(session: Session = Depends(get_labour_session),
     names = worker_names(boord)
     return sorted(({"worker_id": w, "name": names.get(w, w), "uuid": u, "in_ts": iso_utc(ts)}
                    for w, u, ts in paired.open), key=lambda r: r["in_ts"])
+
+
+RECENT_HOURS = 24
+RECENT_LIMIT = 1000  # a full packhouse day is a few hundred; this only stops a runaway
+
+
+@router.get("/scans/recent")
+def recent_scans(session: Session = Depends(get_labour_session),
+                 boord: Session = Depends(get_boord_session)):
+    """Every phone's scans from the last 24 hours, newest first, with the
+    phone that made each one. Open, like presence: a second door phone used
+    to show "Nothing scanned yet" all morning because each phone only knew
+    its own scans, and the person on the door had no way to see that Door 1
+    was busy. It says no more than presence already does - who came and
+    went, never hours or pay - so the door page may have it. Admin entries
+    are included (source "admin"), so a fix shows up at the door too."""
+    now = utcnow()
+    rows = session.exec(select(Scan).where(
+        Scan.deleted == False, Scan.timestamp >= now - timedelta(hours=RECENT_HOURS),  # noqa: E712
+        Scan.timestamp <= now + timedelta(hours=1),
+    ).order_by(Scan.timestamp.desc()).limit(RECENT_LIMIT)).all()
+    names = worker_names(boord)
+    return [{"uuid": r.uuid, "worker_id": r.worker_id, "name": names.get(r.worker_id, r.worker_id),
+             "ts": iso_utc(r.timestamp), "direction": r.direction, "source": r.source,
+             "device_label": r.device_label}
+            for r in rows]
 
 
 # --------------------------------------------------------------------------- #

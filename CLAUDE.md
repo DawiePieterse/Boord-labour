@@ -13,7 +13,7 @@ Boord Labour is a packhouse time clock. Admin phones scan workers' existing Boor
 Access has two layers:
 - **Tailscale** gets you to the app at all. It binds 127.0.0.1; never bind 0.0.0.0.
 - **The admin PIN** separates the door phone from the admin. Tailscale can't do that, because the door phone must be on the tailnet for its camera.
-  - The door page `/` (`frontend/index.html`, `app.js`) uses only `GET /api/workers`, `POST /api/scans/sync`, `GET /api/presence` and `GET /api/version`. Those stay open.
+  - The door page `/` (`frontend/index.html`, `app.js`) uses only `GET /api/workers`, `POST /api/scans/sync`, `GET /api/presence`, `GET /api/scans/recent` and `GET /api/version`. Those stay open.
   - **Every other endpoint must depend on `admin_auth.require_admin`**, which checks the `labour_admin` cookie. That includes any new one you add. The admin page `/admin/` (`frontend/admin/`) shows a PIN screen on any 401.
   - The PIN is pbkdf2-hashed in `data/admin_pin.txt` and set only from the server console (`backend/set_pin.py`, also run by `install.ps1`), never via the web.
   - The cookie has no expiry. It carries a fingerprint of the PIN hash, so changing the PIN revokes every phone.

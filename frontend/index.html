@@ -57,8 +57,11 @@
       </div>
     </div>
     <div class="bg-white rounded-xl shadow p-3">
-      <div class="font-semibold mb-2">Last scans on this phone</div>
+      <div class="font-semibold">Scans in the last 24 hours</div>
+      <div class="text-xs text-slate-500 mb-2">Every phone, newest first</div>
+      <ul id="deviceList" class="divide-y text-sm mb-3 bg-slate-50 rounded-lg px-2"></ul>
       <ul id="recentList" class="divide-y text-sm"></ul>
+      <button id="recentMore" class="hidden w-full mt-2 border rounded-lg py-2 text-sm font-semibold"></button>
     </div>
   </section>
 
