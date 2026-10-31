@@ -182,6 +182,24 @@ class ScanDelete(_Reasoned):
     pass
 
 
+# How far ahead of the server's clock a hand-entered time may be. A scan is
+# something that already happened, so a time in the future is a slip - the
+# wrong day picked, or a shift typed into next week - and it used to be kept:
+# the pay report then showed the person as never paired (an OUT a week from
+# now is more than MAX_SHIFT after its IN), and the stray scan sat outside the
+# 14-day Fix window where nobody saw it. The door phone's own scans are not
+# checked here: a phone whose clock is wrong still saw a real person at the
+# door, and refusing would lose the scan. The grace covers an admin phone a
+# few minutes ahead of the farm PC; admin.js warns from the same 5 minutes.
+FUTURE_GRACE = timedelta(minutes=5)
+
+
+def _not_in_future(ts: datetime) -> datetime:
+    if ts > utcnow() + FUTURE_GRACE:
+        raise HTTPException(422, "That time is in the future - check the date and time")
+    return ts
+
+
 def _audit(session: Session, scan: Scan, action: str, body: _Reasoned, old_ts=None, old_dir=""):
     session.add(ScanEdit(scan_uuid=scan.uuid, action=action, reason=body.reason, at=utcnow(),
                          device_label=body.device_label, old_ts=old_ts, old_direction=old_dir,
@@ -194,7 +212,8 @@ def add_scan(body: ScanAdd, session: Session = Depends(get_labour_session),
              boord: Session = Depends(get_boord_session)):
     if boord.get(Worker, body.worker_id) is None:
         raise HTTPException(404, f"No Boord worker {body.worker_id}")
-    scan = Scan(uuid=str(uuidlib.uuid4()), worker_id=body.worker_id, timestamp=naive_utc(body.timestamp),
+    scan = Scan(uuid=str(uuidlib.uuid4()), worker_id=body.worker_id,
+                timestamp=_not_in_future(naive_utc(body.timestamp)),
                 direction=body.direction, device_label=body.device_label, source="admin", synced_at=utcnow())
     session.add(scan)
     _audit(session, scan, "add", body)
@@ -214,7 +233,7 @@ def change_scan(uuid: str, body: ScanChange, session: Session = Depends(get_labo
     scan = _live_scan(session, uuid)
     old_ts, old_dir = scan.timestamp, scan.direction
     if body.timestamp is not None:
-        scan.timestamp = naive_utc(body.timestamp)
+        scan.timestamp = _not_in_future(naive_utc(body.timestamp))
     if body.direction is not None:
         scan.direction = body.direction
     session.add(scan)

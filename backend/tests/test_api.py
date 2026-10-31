@@ -94,6 +94,25 @@ def test_exception_fixed_by_admin_scan_with_audit(admin_client):
     assert edit["action"] == "add" and edit["new_direction"] == "out"
 
 
+def test_hand_entered_scan_may_not_be_in_the_future(admin_client):
+    """A typo'd date (next week instead of last) used to be kept: the report
+    showed the worker unpaired and the stray scan sat outside Fix's window."""
+    client = admin_client
+    sync(client, ("a", "001", local(12, 7), "in"))
+    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    r = client.post("/api/scans", json={"worker_id": "001", "timestamp": future,
+                                        "direction": "out", "reason": "typo"})
+    assert r.status_code == 422 and "future" in r.json()["detail"]
+    r = client.patch("/api/scans/a", json={"timestamp": future, "reason": "typo"})
+    assert r.status_code == 422
+    [row] = client.get("/api/scans", params={"day": "2026-10-12"}).json()
+    assert row["ts"] == "2026-10-12T05:00:00Z"  # unchanged
+    assert client.get("/api/edits").json() == []  # nothing was audited either
+    # A minute ago is fine, and so is a clock a couple of minutes ahead.
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+    assert client.patch("/api/scans/a", json={"timestamp": soon, "reason": "clock"}).status_code == 200
+
+
 def test_report_refuses_without_rate_and_exports_xlsx(admin_client):
     client = admin_client
     sync(client, ("a", "001", local(12, 7), "in"), ("b", "001", local(12, 17), "out"))

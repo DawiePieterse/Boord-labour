@@ -40,10 +40,25 @@ const IDB = (() => {
     async pending() {
       return (await this.all()).filter((s) => !s.synced).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     },
-    async markSynced(uuids, error = "") {
-      const want = new Set(uuids);
-      const rows = (await this.all()).filter((s) => want.has(s.uuid));
-      await run("readwrite", (s) => rows.forEach((r) => s.put({ ...r, synced: 1, error })));
+    // `sent` is the scans as they were SENT, not just their uuids. A row is
+    // marked synced only if it still says what the server was told: the
+    // operator can tap "Wrong? Make it OUT" while the sync request is in
+    // flight (the result screen is up for exactly that long, and on weak
+    // signal a request takes seconds), and that flip puts the row back to
+    // synced = 0 with the other direction. Marking by uuid alone buried the
+    // flip - the server kept the IN, the phone showed OUT until the next
+    // refresh, and the pay report paired the day the wrong way round. A
+    // flipped row is left pending and goes out on the next pass. One
+    // readwrite transaction, so a flip lands either before (direction
+    // differs, left alone) or after (its own put wins) - never in between.
+    async markSynced(sent, error = "") {
+      await run("readwrite", (store) => sent.forEach((was) => {
+        const req = store.get(was.uuid);
+        req.onsuccess = () => {
+          const row = req.result;
+          if (row && row.direction === was.direction) store.put({ ...row, synced: 1, error });
+        };
+      }));
     },
     async prune() {
       const cutoff = new Date(Date.now() - PRUNE_AFTER_DAYS * 864e5).toISOString();
