@@ -75,10 +75,13 @@ async function syncNow() {
         body: { scans: pending.map(({ uuid, worker_id, timestamp, direction, device_label }) =>
           ({ uuid, worker_id, timestamp, direction, device_label })) },
       });
-      await IDB.markSynced(res.accepted);
+      // The scans as sent, not the uuids: a scan flipped while this request
+      // was out must stay pending (see IDB.markSynced).
+      const accepted = new Set(res.accepted);
+      await IDB.markSynced(pending.filter((s) => accepted.has(s.uuid)));
       // A rejection is permanent (worker no longer active in Boord), so it
       // stops retrying - but it stays on the phone, flagged, for the admin.
-      for (const r of res.rejected) await IDB.markSynced([r.uuid], r.reason);
+      for (const r of res.rejected) await IDB.markSynced(pending.filter((s) => s.uuid === r.uuid), r.reason);
       if (res.rejected.length) Boord.toast(`${res.rejected.length} scan(s) refused: ${res.rejected[0].reason}`);
     }
     serverPresence = await Boord.api("/api/presence");

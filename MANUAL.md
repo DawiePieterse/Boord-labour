@@ -120,7 +120,8 @@ with no IN. **Those hours are not paid until they are fixed.**
   time or direction, or **Add** to enter a scan by hand.
 
 Every correction asks for a reason and is kept on record with the time and
-the phone that made it.
+the phone that made it. A scan cannot be given a time in the future: that
+is a wrong date, and the form says so instead of saving it.
 
 An IN with no OUT after 18 hours counts as a forgotten exit.
 
@@ -191,6 +192,13 @@ error just before the exit line. Updating does not rewrite the launcher.
 
 At boot the server also waits up to 30 seconds for Boord's database, which
 Boord may still be updating, rather than giving up at once.
+
+**Installed before 1.0.10? Run install.bat once more.** The server runs as
+SYSTEM, and Git refused to read a folder that belongs to the account that
+cloned it, so `/api/version` (and Boord Monitor) showed no release tag for
+Labour. The installer now adds the folder to Git's machine-wide
+`safe.directory`, as the other apps' installers do. Or, as administrator:
+`git config --system --add safe.directory C:/Boord-labour`.
 
 The installer also reserves port 8040, so Windows (Hyper-V, WSL or Docker)
 cannot hand it to something else at boot. If Windows has already taken it,

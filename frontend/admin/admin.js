@@ -444,6 +444,11 @@ async function downloadBackup(ev) {
 }
 
 async function saveRate() {
+  // Rates are append-only, so a second tap while the first is still out
+  // would add the same rate twice and leave two rows in the history.
+  const btn = $("saveRate");
+  if (btn.disabled) return;
+  btn.disabled = true;
   try {
     await api("/api/settings/rates", { method: "POST", body: {
       effective_date: $("rateDate").value, hourly_rate: Number($("rateHourly").value),
@@ -454,6 +459,8 @@ async function saveRate() {
     renderSettings();
   } catch (e) {
     Boord.toast(Boord.errorDetail(e));
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -504,6 +511,12 @@ Boord.boot(async () => {
   $("scanFormCancel").addEventListener("click", closeScanForm);
   $("scanFormEl").addEventListener("submit", async (ev) => {
     ev.preventDefault();
+    // Disabled while the request is out. On weak signal a Save that looks
+    // untouched gets tapped again, and each tap added another scan by hand:
+    // a "repeat scan, ignored" row to delete with a reason, or two OUTs.
+    const save = $("scanFormSave");
+    if (save.disabled) return;
+    save.disabled = true;
     try {
       await submitScanForm({
         timestamp: new Date($("scanFormTime").value).toISOString(),
@@ -514,6 +527,8 @@ Boord.boot(async () => {
       renderFix();
     } catch (e) {
       Boord.toast(Boord.errorDetail(e));
+    } finally {
+      save.disabled = false;
     }
   });
   document.querySelectorAll("[data-preset]").forEach((b) =>
