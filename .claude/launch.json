@@ -5,7 +5,15 @@
       "name": "labour",
       "cwd": "backend",
       "runtimeExecutable": ".venv/bin/python",
+      "env": { "BOORD_DB_PATH": "/Users/v8ehcw/Documents/Projects/Boord/data/boord.db" },
       "runtimeArgs": ["run_preview.py"],
+      "port": 8040
+    },
+    {
+      "name": "labour-preview",
+      "runtimeExecutable": "/tmp/labour_preview_venv/bin/python",
+      "runtimeArgs": ["/tmp/labour_preview/backend/run_preview.py"],
+      "env": { "BOORD_DB_PATH": "/tmp/labour_preview_boord/boord.db" },
       "port": 8040
     }
   ]
