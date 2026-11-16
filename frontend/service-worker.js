@@ -1,7 +1,7 @@
 // App-shell cache so the scanner still opens with no signal. Scans
 // themselves are queued in IndexedDB (idb.js), never here.
 const CACHE_PREFIX = "boord-labour-";
-const CACHE = "boord-labour-v11";
+const CACHE = "boord-labour-v12";
 const SHELL = [
   "./",
   "./index.html",
