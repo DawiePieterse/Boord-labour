@@ -15,3 +15,21 @@ def test_updater_import_check_matches_requirements():
     with open(os.path.join(ROOT, "update_labour_server.bat"), encoding="utf-8") as fh:
         checked = re.search(r'-c "import ([a-z_, ]+)"', fh.read()).group(1)
     assert {m.strip() for m in checked.split(",")} == required
+
+
+def test_updater_starts_the_new_file_after_the_checkout():
+    """cmd reads a batch file off the disk as it runs, so once the checkout has
+    replaced the updater it must start the new file from the top, as the last
+    thing in that block: anything after it would be read at a stale byte of
+    the new file (Kudde v0.12 ended "failed" that way, the server never
+    restarted)."""
+    import os
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    with open(os.path.join(root, "update_labour_server.bat"), encoding="utf-8") as fh:
+        text = fh.read()
+    assert re.search(r'git checkout --force "!NEWTAG!"\n.*?\n    "%~f0" %\* --checked-out\n\)\n', text, re.S)
+    # ...and a second time round stops, rather than checking out for ever.
+    assert '"%%~A"=="--checked-out"' in text
+    # pip through the venv's python: Scripts\pip.exe is blocked on the farm PC.
+    assert not re.search(r"^pip install", text, re.M)
