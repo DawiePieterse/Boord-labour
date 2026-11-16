@@ -19,11 +19,20 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 import config
+import tunnel_gate
 from backup import start_backup_scheduler
 from db import boord_engine, init_labour_db
 from routers import admin, reports, scans, settings, version, workers
 
 app = FastAPI(title="Boord Labour")
+
+# Who may reach this app through the Cloudflare Tunnel (tunnel_gate.py): the
+# paired-device roles it admits there. Tailscale is not asked anything.
+# The door phone is a field device and the office is the admin; both reach
+# this app, as does the owner. What the door phone may not do - pay, rates, fixes - is still
+# the admin PIN's job (admin_auth.py), exactly as it is over Tailscale.
+TUNNEL_ROLES = ("admin", "owner", "field")
+tunnel_gate.install(app, TUNNEL_ROLES)
 
 for module in (workers, scans, reports, settings, admin, version):
     app.include_router(module.router)
